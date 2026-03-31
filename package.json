@@ -1,0 +1,50 @@
+{
+  "name": "practice-01",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "NEXT_PUBLIC_FLO_ENV=dev next dev",
+    "qa": "NEXT_PUBLIC_FLO_ENV=qa next dev",
+    "prod": "NEXT_PUBLIC_FLO_ENV=prod next dev",
+    "build": "NEXT_PUBLIC_FLO_ENV=dev next build",
+    "build:dev": "NEXT_PUBLIC_FLO_ENV=dev next build",
+    "build:qa": "NEXT_PUBLIC_FLO_ENV=qa next build",
+    "build:prod": "NEXT_PUBLIC_FLO_ENV=prod next build",
+    "start": "next start",
+    "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "container:build": "bash container-build.sh"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "crypto-js": "^4.2.0",
+    "mixpanel-browser": "^2.74.0",
+    "next": "^15.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "autoprefixer": "^10.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-next": "^15.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-tailwindcss": "^3.18.2",
+    "postcss": "^8.0.0",
+    "prettier": "^3.0.0",
+    "prettier-plugin-tailwindcss": "^0.6.0",
+    "tailwindcss": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_input.file_path // empty'); if [[ -n \"$FILE\" && \"$FILE\" =~ \\.(ts|tsx|js|jsx)$ ]] && [ -f \"$FILE\" ]; then npx eslint --fix \"$FILE\" 2>/dev/null || true; npx prettier --write \"$FILE\" 2>/dev/null || true; fi",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+# Next.js CSR Template - Docker Compose
+# 로컬 개발 및 테스트용
+
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: nextjs-csr-app
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
