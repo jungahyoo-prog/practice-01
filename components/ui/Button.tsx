@@ -111,9 +111,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     const sizeClasses = {
-      sm: 'h-[45px] px-[35px] py-[10px] text-[13px] leading-[20px] gap-[2px]',
-      md: 'h-[90px] px-[75px] py-[32px] text-[13px] leading-[20px] gap-px',
-      lg: 'h-[100px] px-[75px] py-[32px] text-[13px] leading-[20px] gap-px',
+      sm: 'h-[36px] px-[28px] py-[8px] text-[13px] leading-[20px] gap-[2px]',
+      md: 'h-[72px] px-[60px] py-[26px] text-[13px] leading-[20px] gap-px',
+      lg: 'h-[80px] px-[60px] py-[26px] text-[13px] leading-[20px] gap-px',
     }
 
     const widthClass = fullWidth ? 'w-full' : ''
@@ -175,7 +175,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     )
 
     return (
-      <button ref={ref} className={classes} disabled={disabled || loading} {...props}>
+      <button
+        ref={ref}
+        type={props.type ?? 'button'}
+        className={classes}
+        disabled={disabled || loading}
+        {...props}
+      >
         {loading ? (
           <LoadingSpinner />
         ) : (

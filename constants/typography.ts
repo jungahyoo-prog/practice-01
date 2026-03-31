@@ -10,6 +10,8 @@
 export const typography = {
   /** 약 11pt 느낌의 페이지 타이틀 */
   heading: 'text-[15px] font-[800] leading-[22px] tracking-[-0.2px]',
+  /** 대시보드 상단 레이블 */
+  dashboardLabel: 'text-[20px] font-[700] leading-[28px] tracking-[-0.2px]',
   /** 약 11pt 느낌의 큰 본문 */
   body24: 'text-[15px] font-[500] leading-[22px] tracking-[-0.2px]',
   /** 약 11pt 느낌의 일반 본문 */
