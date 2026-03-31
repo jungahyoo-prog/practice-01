@@ -55,6 +55,7 @@ const nextConfig = {
                 ? "connect-src 'self' https://cdn.jsdelivr.net https://*.supabase.co wss://*.supabase.co https://*.supabase.in wss://*.supabase.in"
                 : "connect-src 'self' https://cdn.jsdelivr.net",
               "font-src 'self' https://cdn.jsdelivr.net",
+              "frame-src 'self' https://calendar.google.com",
               "frame-ancestors 'none'",
             ].join('; '),
           },
