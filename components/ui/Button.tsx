@@ -111,9 +111,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     const sizeClasses = {
-      sm: 'h-[45px] px-[35px] py-[10px] text-[26px] leading-[45px] gap-[2px]',
-      md: 'h-[90px] px-[75px] py-[32px] text-[30px] leading-[35px] gap-px',
-      lg: 'h-[100px] px-[75px] py-[32px] text-[32px] leading-[36px] gap-px',
+      sm: 'h-[45px] px-[35px] py-[10px] text-[13px] leading-[20px] gap-[2px]',
+      md: 'h-[90px] px-[75px] py-[32px] text-[13px] leading-[20px] gap-px',
+      lg: 'h-[100px] px-[75px] py-[32px] text-[13px] leading-[20px] gap-px',
     }
 
     const widthClass = fullWidth ? 'w-full' : ''

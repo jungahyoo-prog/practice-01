@@ -122,36 +122,36 @@ html {
 /* FLO Design System Foundation - Base Typography */
 /* h100 -> h1 */
 h1 {
-  font-size: 28px;
-  line-height: 36px;
+  font-size: 15px;
+  line-height: 22px;
   font-weight: 700;
 }
 
 /* h200 -> h2 */
 h2 {
-  font-size: 24px;
-  line-height: 32px;
+  font-size: 15px;
+  line-height: 22px;
   font-weight: 700;
 }
 
 /* h300 -> h3 */
 h3 {
-  font-size: 20px;
-  line-height: 28px;
+  font-size: 15px;
+  line-height: 22px;
   font-weight: 700;
 }
 
 /* h400 -> h4 */
 h4 {
-  font-size: 18px;
-  line-height: 24px;
+  font-size: 15px;
+  line-height: 22px;
   font-weight: 600;
 }
 
 /* body1 -> default body text style */
 body {
   min-height: 100vh;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 22px;
   font-weight: 400;
   color: var(--color-text-primary);

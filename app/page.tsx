@@ -255,7 +255,6 @@ function buildGoogleCalendarEventUrl(schedule: ScheduleItem, projectName?: strin
   ).padStart(2, '0')}00`
 
   const params = new URLSearchParams({
-    action: 'TEMPLATE',
     text: schedule.title,
     dates: `${start}/${end}`,
     details: schedule.memo,
@@ -263,7 +262,7 @@ function buildGoogleCalendarEventUrl(schedule: ScheduleItem, projectName?: strin
     ctz: 'Asia/Seoul',
   })
 
-  return `https://calendar.google.com/calendar/render?${params.toString()}`
+  return `https://calendar.google.com/calendar/u/0/r/eventedit?${params.toString()}`
 }
 
 function buildGoogleCalendarEmbedUrl(calendarId: string) {
