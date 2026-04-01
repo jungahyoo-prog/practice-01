@@ -1209,12 +1209,6 @@ export default function Home() {
         <section className="space-y-4">
           <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" onClick={() => setActiveTab(tab.key)}>{tab.label}</Button>)}</div></Card>
           {renderTabContent()}
-          {activeTab !== 'schedule-list' && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card padding="md" className="border-transparent bg-white shadow-m"><div className="space-y-3"><Text variant="body24" as="h3" color="text-fg-primary">오늘 일정</Text>{todaySchedules.map((schedule) => <div key={schedule.id} className="rounded-[24px] bg-surface-primary p-4"><Text variant="detail20" color="text-fg-primary">{schedule.title}</Text><Text variant="detail20" color="text-fg-secondary" className="mt-1">{formatDateLabel(schedule.date, schedule.time)}</Text></div>)}</div></Card>
-              <Card padding="md" className="border-transparent bg-white shadow-m"><div className="space-y-3"><Text variant="body24" as="h3" color="text-fg-primary">다가오는 일정</Text>{upcomingSchedules.map((schedule) => <div key={schedule.id} className="rounded-[24px] bg-surface-primary p-4"><Text variant="detail20" color="text-fg-primary">{schedule.title}</Text><Text variant="detail20" color="text-fg-secondary" className="mt-1">{formatDateLabel(schedule.date, schedule.time)}</Text></div>)}</div></Card>
-            </div>
-          )}
         </section>
       </div>
     </main>
