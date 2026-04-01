@@ -20,8 +20,8 @@ type ProjectItem = {
   owner: string
   priority: PriorityLevel
   progress: number
-  startMonth: number
-  endMonth: number
+  startDate: string
+  endDate: string
 }
 
 type ScheduleItem = {
@@ -42,9 +42,9 @@ type ProjectFormState = {
   name: string
   owner: string
   priority: PriorityLevel
-  progress: string
-  startMonth: string
-  endMonth: string
+  startDate: string
+  endDate: string
+  periodPreset: string
 }
 
 type ScheduleFormState = {
@@ -75,6 +75,49 @@ type CustomRepeatConfig = {
   weeklyDays: string[]
 }
 
+const projectPeriodPresetLabels: Record<ProjectPeriodPreset, string> = {
+  custom: '직접 입력',
+  'half-1': '상반기',
+  'half-2': '하반기',
+  'quarter-1': '1분기',
+  'quarter-2': '2분기',
+  'quarter-3': '3분기',
+  'quarter-4': '4분기',
+  'month-1': '1월',
+  'month-2': '2월',
+  'month-3': '3월',
+  'month-4': '4월',
+  'month-5': '5월',
+  'month-6': '6월',
+  'month-7': '7월',
+  'month-8': '8월',
+  'month-9': '9월',
+  'month-10': '10월',
+  'month-11': '11월',
+  'month-12': '12월',
+}
+
+type ProjectPeriodPreset =
+  | 'custom'
+  | 'half-1'
+  | 'half-2'
+  | 'quarter-1'
+  | 'quarter-2'
+  | 'quarter-3'
+  | 'quarter-4'
+  | 'month-1'
+  | 'month-2'
+  | 'month-3'
+  | 'month-4'
+  | 'month-5'
+  | 'month-6'
+  | 'month-7'
+  | 'month-8'
+  | 'month-9'
+  | 'month-10'
+  | 'month-11'
+  | 'month-12'
+
 const tabs: { key: DashboardTab; label: string }[] = [
   { key: 'project-view', label: '프로젝트 보기' },
   { key: 'schedule-list', label: '일정 보기' },
@@ -103,9 +146,9 @@ const scheduleKindTone: Record<ScheduleKind, string> = {
 }
 
 const initialProjects: ProjectItem[] = [
-  { id: 'brand-renewal', name: '2026 브랜드 경험 개편', owner: '브랜드경험팀', priority: '최우선', progress: 58, startMonth: 0, endMonth: 11 },
-  { id: 'growth-campaign', name: '신규 구독 전환 실험', owner: 'Growth Squad', priority: '높음', progress: 41, startMonth: 2, endMonth: 9 },
-  { id: 'ops-automation', name: '운영 자동화 정비', owner: 'Operations', priority: '보통', progress: 24, startMonth: 4, endMonth: 11 },
+  { id: 'brand-renewal', name: '2026 브랜드 경험 개편', owner: '브랜드경험팀', priority: '최우선', progress: 58, startDate: '2026-01-01', endDate: '2026-12-31' },
+  { id: 'growth-campaign', name: '신규 구독 전환 실험', owner: 'Growth Squad', priority: '높음', progress: 41, startDate: '2026-03-01', endDate: '2026-10-31' },
+  { id: 'ops-automation', name: '운영 자동화 정비', owner: 'Operations', priority: '보통', progress: 24, startDate: '2026-05-01', endDate: '2026-12-31' },
 ]
 
 const initialSchedules: ScheduleItem[] = [
@@ -121,9 +164,9 @@ const defaultProjectForm = (): ProjectFormState => ({
   name: '',
   owner: '',
   priority: '보통',
-  progress: '0',
-  startMonth: '0',
-  endMonth: '11',
+  startDate: '2026-01-01',
+  endDate: '2026-12-31',
+  periodPreset: 'half-1',
 })
 
 const defaultScheduleForm = (projectId: string): ScheduleFormState => ({
@@ -158,6 +201,47 @@ function formatDateLabel(date: string, time: string) {
 
 function formatDuration(startMonth: number, endMonth: number) {
   return `2026.${String(startMonth + 1).padStart(2, '0')} - 2026.${String(endMonth + 1).padStart(2, '0')}`
+}
+
+function getMonthIndexFromDate(date: string) {
+  return new Date(`${date}T00:00:00`).getMonth()
+}
+
+function formatProjectDuration(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
+  return `${start.getFullYear()}.${String(start.getMonth() + 1).padStart(2, '0')}.${String(start.getDate()).padStart(2, '0')} - ${end.getFullYear()}.${String(end.getMonth() + 1).padStart(2, '0')}.${String(end.getDate()).padStart(2, '0')}`
+}
+
+function getLastDayOfMonth(month: number) {
+  return new Date(2026, month, 0).getDate()
+}
+
+function buildProjectPeriodRange(preset: ProjectPeriodPreset) {
+  if (preset === 'custom') return null
+
+  const ranges: Record<Exclude<ProjectPeriodPreset, 'custom'>, { startDate: string; endDate: string }> = {
+    'half-1': { startDate: '2026-01-01', endDate: '2026-06-30' },
+    'half-2': { startDate: '2026-07-01', endDate: '2026-12-31' },
+    'quarter-1': { startDate: '2026-01-01', endDate: '2026-03-31' },
+    'quarter-2': { startDate: '2026-04-01', endDate: '2026-06-30' },
+    'quarter-3': { startDate: '2026-07-01', endDate: '2026-09-30' },
+    'quarter-4': { startDate: '2026-10-01', endDate: '2026-12-31' },
+    'month-1': { startDate: '2026-01-01', endDate: `2026-01-${String(getLastDayOfMonth(1)).padStart(2, '0')}` },
+    'month-2': { startDate: '2026-02-01', endDate: `2026-02-${String(getLastDayOfMonth(2)).padStart(2, '0')}` },
+    'month-3': { startDate: '2026-03-01', endDate: `2026-03-${String(getLastDayOfMonth(3)).padStart(2, '0')}` },
+    'month-4': { startDate: '2026-04-01', endDate: `2026-04-${String(getLastDayOfMonth(4)).padStart(2, '0')}` },
+    'month-5': { startDate: '2026-05-01', endDate: `2026-05-${String(getLastDayOfMonth(5)).padStart(2, '0')}` },
+    'month-6': { startDate: '2026-06-01', endDate: `2026-06-${String(getLastDayOfMonth(6)).padStart(2, '0')}` },
+    'month-7': { startDate: '2026-07-01', endDate: `2026-07-${String(getLastDayOfMonth(7)).padStart(2, '0')}` },
+    'month-8': { startDate: '2026-08-01', endDate: `2026-08-${String(getLastDayOfMonth(8)).padStart(2, '0')}` },
+    'month-9': { startDate: '2026-09-01', endDate: `2026-09-${String(getLastDayOfMonth(9)).padStart(2, '0')}` },
+    'month-10': { startDate: '2026-10-01', endDate: `2026-10-${String(getLastDayOfMonth(10)).padStart(2, '0')}` },
+    'month-11': { startDate: '2026-11-01', endDate: `2026-11-${String(getLastDayOfMonth(11)).padStart(2, '0')}` },
+    'month-12': { startDate: '2026-12-01', endDate: `2026-12-${String(getLastDayOfMonth(12)).padStart(2, '0')}` },
+  }
+
+  return ranges[preset]
 }
 
 function getRepeatOptionLabels(date: string) {
@@ -270,6 +354,7 @@ export default function Home() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<ProjectFormState>(defaultProjectForm())
+  const [isProjectPeriodMenuOpen, setIsProjectPeriodMenuOpen] = useState(false)
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id))
   const [isCustomRepeatMenuOpen, setIsCustomRepeatMenuOpen] = useState(false)
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id).date}T00:00:00`).getDay())] })
@@ -295,12 +380,18 @@ export default function Home() {
     [scheduleFilters, scheduleQuickFilter, sortedSchedules],
   )
 
+  const getProjectPresetButtonClass = (isActive: boolean) =>
+    [
+      'h-[30px] px-[14px] py-0 text-[11px] leading-[16px] tracking-[0px] border rounded-full',
+      isActive ? 'border-black bg-black text-white hover:bg-black active:bg-black' : 'border-black/35 bg-white text-black hover:bg-black/5 active:bg-black/10',
+    ].join(' ')
+
   const projectTimelineCards = useMemo(
     () =>
       projects.map((project) => {
         const milestones = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.kind === 'major' && schedule.date >= todayKey)
         const nextMilestone = milestones[0]
-        return { ...project, duration: formatDuration(project.startMonth, project.endMonth), milestone: nextMilestone ? `${nextMilestone.title} · ${formatDateLabel(nextMilestone.date, nextMilestone.time)}` : '남아 있는 주요 일정이 없습니다.' }
+        return { ...project, duration: formatProjectDuration(project.startDate, project.endDate), milestone: nextMilestone ? `${nextMilestone.title} · ${formatDateLabel(nextMilestone.date, nextMilestone.time)}` : '남아 있는 주요 일정이 없습니다.' }
       }),
     [projects, sortedSchedules, todayKey],
   )
@@ -397,11 +488,36 @@ export default function Home() {
     setScheduleQuickFilter('all')
   }
 
-  const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setProjectForm((current) => ({ ...current, [field]: event.target.value }))
+  const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setProjectForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleChange = (field: keyof ScheduleFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
   const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setCustomRepeatConfig((current) => ({ ...current, [field]: event.target.value }))
+
+  const handleProjectPeriodPresetChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const preset = event.target.value as ProjectPeriodPreset
+    const range = buildProjectPeriodRange(preset)
+
+    setProjectForm((current) => ({
+      ...current,
+      periodPreset: preset,
+      startDate: range?.startDate ?? current.startDate,
+      endDate: range?.endDate ?? current.endDate,
+    }))
+  }
+
+  const applyProjectPeriodPreset = (preset: ProjectPeriodPreset) => {
+    const range = buildProjectPeriodRange(preset)
+
+    setProjectForm((current) => ({
+      ...current,
+      periodPreset: preset,
+      startDate: range?.startDate ?? current.startDate,
+      endDate: range?.endDate ?? current.endDate,
+    }))
+    setIsProjectPeriodMenuOpen(false)
+  }
 
   const toggleCustomRepeatWeekday = (day: string) =>
     setCustomRepeatConfig((current) => ({
@@ -422,6 +538,7 @@ export default function Home() {
   const resetProjectForm = () => {
     setEditingProjectId(null)
     setProjectForm(defaultProjectForm())
+    setIsProjectPeriodMenuOpen(false)
   }
 
   const resetScheduleForm = (projectId?: string) => {
@@ -431,9 +548,18 @@ export default function Home() {
   }
 
   const saveProject = () => {
-    const safeStartMonth = Math.max(0, Math.min(11, Number(projectForm.startMonth) || 0))
-    const safeEndMonth = Math.max(safeStartMonth, Math.min(11, Number(projectForm.endMonth) || 11))
-    const nextProject: ProjectItem = { id: editingProjectId ?? `project-${Date.now()}`, name: projectForm.name || '새 프로젝트', owner: projectForm.owner || '담당자 미정', priority: projectForm.priority, progress: Math.max(0, Math.min(100, Number(projectForm.progress) || 0)), startMonth: safeStartMonth, endMonth: safeEndMonth }
+    const normalizedStartDate = projectForm.startDate
+    const normalizedEndDate = projectForm.endDate < normalizedStartDate ? normalizedStartDate : projectForm.endDate
+    const currentProject = projects.find((project) => project.id === editingProjectId)
+    const nextProject: ProjectItem = {
+      id: editingProjectId ?? `project-${Date.now()}`,
+      name: projectForm.name || '새 프로젝트',
+      owner: projectForm.owner || '담당자 미정',
+      priority: projectForm.priority,
+      progress: currentProject?.progress ?? 0,
+      startDate: normalizedStartDate,
+      endDate: normalizedEndDate,
+    }
     setProjects((current) => (editingProjectId ? current.map((project) => (project.id === editingProjectId ? nextProject : project)) : [...current, nextProject]))
     if (!editingProjectId) setScheduleForm((current) => ({ ...current, projectId: nextProject.id }))
     setActiveTab('project-view')
@@ -472,7 +598,7 @@ export default function Home() {
     const target = projects.find((project) => project.id === projectId)
     if (!target) return
     setEditingProjectId(projectId)
-    setProjectForm({ name: target.name, owner: target.owner, priority: target.priority, progress: String(target.progress), startMonth: String(target.startMonth), endMonth: String(target.endMonth) })
+    setProjectForm({ name: target.name, owner: target.owner, priority: target.priority, startDate: target.startDate, endDate: target.endDate, periodPreset: 'custom' })
     setActiveTab('project-create')
   }
 
@@ -530,7 +656,7 @@ export default function Home() {
                       <div className="rounded-full bg-blue-50 px-3 py-2"><Text variant="detail20" color="text-blue-900">진행률 {project.progress}%</Text></div>
                     </div>
                   </div>
-                  <TimelineTrack startMonth={project.startMonth} endMonth={project.endMonth} />
+                  <TimelineTrack startMonth={getMonthIndexFromDate(project.startDate)} endMonth={getMonthIndexFromDate(project.endDate)} />
                   <div className="rounded-[24px] bg-surface-primary p-4">
                     <Text variant="detail20" color="text-fg-tertiary">다음 주요 일정</Text>
                     <Text variant="detail20" color="text-fg-primary" className="mt-2">{project.milestone}</Text>
@@ -607,16 +733,58 @@ export default function Home() {
         <Card padding="lg" className="border-transparent bg-white shadow-m">
           <div className="space-y-6">
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">프로젝트 이름</Text><input value={projectForm.name} onChange={handleProjectChange('name')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="프로젝트 이름을 입력해 주세요" /></label>
-            <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">담당 조직</Text><input value={projectForm.owner} onChange={handleProjectChange('owner')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="담당 팀 또는 담당자를 입력해 주세요" /></label>
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시작 월</Text><select value={projectForm.startMonth} onChange={handleProjectChange('startMonth')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{timelineMonths.map((month, index) => <option key={`start-${month}`} value={String(index)}>{month}</option>)}</select></label>
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">종료 월</Text><select value={projectForm.endMonth} onChange={handleProjectChange('endMonth')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{timelineMonths.map((month, index) => <option key={`end-${month}`} value={String(index)}>{month}</option>)}</select></label>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">우선순위</Text><select value={projectForm.priority} onChange={handleProjectChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select></label>
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">진행률</Text><input type="number" min="0" max="100" value={projectForm.progress} onChange={handleProjectChange('progress')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
-            </div>
-            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" onClick={saveProject}>{editingProjectId ? '프로젝트 수정 완료' : '새 프로젝트 추가'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={resetProjectForm}>입력 초기화</Button></div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">담당 조직</Text><input value={projectForm.owner} onChange={handleProjectChange('owner')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="담당 팀 또는 담당자를 입력해 주세요" /></label>
+                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">우선순위</Text><select value={projectForm.priority} onChange={handleProjectChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select></label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시작일</Text><input type="date" value={projectForm.startDate} onChange={(event) => setProjectForm((current) => ({ ...current, startDate: event.target.value, periodPreset: 'custom' }))} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
+                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">종료일</Text><input type="date" value={projectForm.endDate} onChange={(event) => setProjectForm((current) => ({ ...current, endDate: event.target.value, periodPreset: 'custom' }))} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
+              </div>
+                <div className="space-y-3 pt-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset === 'half-1')} onClick={() => applyProjectPeriodPreset('half-1')}>상반기</Button>
+                    <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset === 'half-2')} onClick={() => applyProjectPeriodPreset('half-2')}>하반기</Button>
+                    <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset === 'quarter-1')} onClick={() => applyProjectPeriodPreset('quarter-1')}>1분기</Button>
+                    <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset === 'quarter-2')} onClick={() => applyProjectPeriodPreset('quarter-2')}>2분기</Button>
+                    <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset === 'quarter-3')} onClick={() => applyProjectPeriodPreset('quarter-3')}>3분기</Button>
+                    <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset === 'quarter-4')} onClick={() => applyProjectPeriodPreset('quarter-4')}>4분기</Button>
+                    <div className="relative">
+                      <Button variant="outlineDark" size="sm" shape="round" className={getProjectPresetButtonClass(projectForm.periodPreset.startsWith('month-'))} onClick={() => setIsProjectPeriodMenuOpen((current) => !current)}>
+                        월별 선택
+                      </Button>
+                      {isProjectPeriodMenuOpen && (
+                        <Card padding="sm" className="absolute left-0 top-full z-20 mt-1 border-black/15 bg-white shadow-[0_8px_18px_rgba(15,23,42,0.08)] md:left-full md:top-1/2 md:ml-1.5 md:mt-0 md:-translate-y-1/2">
+                          <div className="flex w-max min-w-[492px] flex-nowrap gap-2">
+                            {Array.from({ length: 12 }, (_, index) => {
+                              const preset = `month-${index + 1}` as ProjectPeriodPreset
+                              return (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => applyProjectPeriodPreset(preset)}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
+                                    projectForm.periodPreset === preset
+                                      ? 'border-black bg-black text-white'
+                                      : 'border-black/30 bg-surface text-fg-primary hover:border-black/60'
+                                  }`}
+                                >
+                                  <Text variant="detail20" color={projectForm.periodPreset === preset ? 'text-white' : 'text-fg-primary'}>
+                                    {index + 1}
+                                  </Text>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </Card>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              <div className="flex flex-wrap gap-3 pt-4">
+                <Button variant="primary" size="sm" shape="round" onClick={saveProject}>{editingProjectId ? '프로젝트 수정 완료' : '새 프로젝트 추가'}</Button>
+                <Button variant="outlineDark" size="sm" shape="round" onClick={resetProjectForm}>입력 초기화</Button>
+              </div>
           </div>
         </Card>
       )
