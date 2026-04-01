@@ -1383,33 +1383,36 @@ export default function Home() {
             {googleClientId ? (
               <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
                 <div className="space-y-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="space-y-2"><Text variant="detail20" color="text-fg-tertiary">구글 계정 연동</Text><Text variant="detail20" color="text-fg-secondary">{isConnected ? `${googleEmail || '연결된 계정'}으로 로그인되어 있습니다. 저장할 캘린더를 직접 고를 수 있어요.` : '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.'}</Text></div>
-                    {isConnected ? <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>연결 해제</Button> : <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>구글 로그인</Button>}
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-2"><Text variant="detail20" color="text-fg-tertiary">구글 계정 연동</Text><Text variant="detail20" color="text-fg-secondary">{isConnected ? `${googleEmail || '연결된 계정'}으로 로그인되어 있습니다. 저장할 캘린더를 직접 고를 수 있어요.` : '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.'}</Text></div>
+                      {isConnected ? (
+                        <div className="flex flex-col gap-2">
+                          <Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button>
+                          <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>연결 해제</Button>
+                        </div>
+                      ) : <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>구글 로그인</Button>}
+                    </div>
+                    {isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">저장할 캘린더 선택</Text><select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' (기본)' : ''}</option>)}</select></label>}
+                    {isConnected && isCalendarsLoading && <Text variant="detail20" color="text-fg-secondary">캘린더 목록을 불러오는 중입니다.</Text>}
                   </div>
-                  {isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">저장할 캘린더 선택</Text><select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' (기본)' : ''}</option>)}</select></label>}
-                  {isConnected && isCalendarsLoading && <Text variant="detail20" color="text-fg-secondary">캘린더 목록을 불러오는 중입니다.</Text>}
-                </div>
-              </Card>
-            ) : (
-              <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s"><Text variant="detail20" color="text-fg-secondary">`NEXT_PUBLIC_GOOGLE_CLIENT_ID`를 설정하면 구글 계정 로그인과 캘린더 직접 저장 기능을 사용할 수 있습니다.</Text></Card>
-            )}
-            {!isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">열어볼 캘린더 ID 또는 이메일</Text><input value={calendarId} onChange={(event) => setCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="example@group.calendar.google.com" /></label>}
-            <div className="rounded-[28px] bg-surface-primary p-5"><Text variant="detail20" color="text-fg-tertiary">연동 상태</Text><Text variant="detail20" color={calendarFeedback.tone === 'error' ? 'text-red-700' : calendarFeedback.tone === 'success' ? 'text-blue-900' : 'text-fg-secondary'} className="mt-2">{calendarFeedback.text}</Text></div>
-            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => setActiveTab('schedule-create')}>새 일정 추가하기</Button></div>
-          </div>
-        </Card>
+                </Card>
+              ) : (
+                <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s"><Text variant="detail20" color="text-fg-secondary">`NEXT_PUBLIC_GOOGLE_CLIENT_ID`를 설정하면 구글 계정 로그인과 캘린더 직접 저장 기능을 사용할 수 있습니다.</Text></Card>
+              )}
+              {!isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">열어볼 캘린더 ID 또는 이메일</Text><input value={calendarId} onChange={(event) => setCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="example@group.calendar.google.com" /></label>}
+            </div>
+          </Card>
         <Card padding="none" className="overflow-hidden border-transparent bg-white shadow-m">
           <div className="border-b border-[var(--color-border)] px-6 py-5">
             <div className="space-y-4">
               <div className="space-y-2">
                 <Text variant="body24" as="h2" color="text-fg-primary">
-                  {activeCalendarPanelTab === 'preview' ? '선택한 구글 캘린더 보기' : '가져올 수 있는 캘린더 일정'}
+                  {activeCalendarPanelTab === 'preview' ? '선택한 구글 캘린더 보기' : '일정 가져오기'}
                 </Text>
                 <Text variant="detail20" color="text-fg-secondary" className="mt-2">
                   {activeCalendarPanelTab === 'preview'
                     ? effectiveCalendarId || '캘린더 ID를 입력하거나 구글 계정에 로그인하면 여기에 표시됩니다.'
-                    : '구글 캘린더 일정은 iframe 안에서 직접 가져올 수 없어서, 아래 목록에서 `내 일정 등록`으로 불러올 수 있게 준비했습니다.'}
+                    : '내 일정으로 가져올 수 있는 구글 캘린더 일정입니다.'}
                 </Text>
               </div>
               <div className="flex flex-wrap gap-3">
