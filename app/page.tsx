@@ -428,6 +428,36 @@ function ProjectActionIconButton({
   )
 }
 
+function FieldHelpButton({
+  label,
+  note,
+  isOpen,
+  onToggle,
+}: {
+  label: string
+  note: string
+  isOpen: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={`${label} 설명 보기`}
+        className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[12px] font-[700] text-fg-tertiary transition hover:bg-surface-primary"
+      >
+        ?
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 top-8 z-20 w-[220px] rounded-[20px] bg-gray-800 px-4 py-3 text-left shadow-l">
+          <Text variant="detail20" color="text-alpha-white-700">{note}</Text>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Home() {
   const todayKey = formatLocalDateKey(new Date())
   const [isGoogleScriptReady, setIsGoogleScriptReady] = useState(false)
@@ -446,6 +476,7 @@ export default function Home() {
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
+  const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
   const { authorize, calendars, disconnect, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
@@ -681,6 +712,20 @@ export default function Home() {
     setScheduleProjectShortcutId(null)
     setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
   }
+
+  const goToDashboardHome = () => {
+    setActiveTab('project-view')
+    setScheduleQuickFilter('all')
+    setScheduleProjectShortcutId(null)
+    setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
+    setEditingProjectId(null)
+    setEditingScheduleId(null)
+    setActiveFieldHelp(null)
+    setProjectForm(defaultProjectForm())
+    setScheduleForm(defaultScheduleForm(projects[0]?.id ?? ''))
+    setIsProjectPeriodMenuOpen(false)
+    setIsCustomRepeatMenuOpen(false)
+  }
   const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setCustomRepeatConfig((current) => ({ ...current, [field]: event.target.value }))
 
@@ -831,7 +876,7 @@ export default function Home() {
         <Card padding="lg" className="border-transparent bg-surface-primary shadow-m">
           <div className="space-y-4">
             {projectTimelineCards.map((project) => (
-                <Card key={project.id} padding="md" className="border-transparent bg-white shadow-s">
+                <Card key={project.id} padding="md" className="border-black/5 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_28px_rgba(15,23,42,0.05)]">
                   <div className="space-y-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between">
                         <div className="space-y-2 pt-1 lg:flex lg:min-h-[72px] lg:flex-col lg:justify-between lg:pt-1.5">
@@ -882,7 +927,7 @@ export default function Home() {
                       {project.nextSchedules.length > 0 ? (
                           <div className="grid gap-3 xl:grid-cols-2">
                             {project.nextSchedules.map((schedule) => (
-                                <div key={schedule.id} className="rounded-[24px] bg-[#fbfcfd] p-4">
+                                <div key={schedule.id} className="rounded-[24px] bg-[linear-gradient(135deg,_rgba(248,250,252,0.98)_0%,_rgba(243,246,249,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <CompactScheduleBadge
@@ -1028,10 +1073,21 @@ export default function Home() {
         <Card padding="lg" className="border-transparent bg-white shadow-m">
           <div className="space-y-6">
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">프로젝트 이름</Text><input value={projectForm.name} onChange={handleProjectChange('name')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="프로젝트 이름을 입력해 주세요" /></label>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">담당 조직</Text><input value={projectForm.owner} onChange={handleProjectChange('owner')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="담당 팀 또는 담당자를 입력해 주세요" /></label>
-                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">우선순위</Text><select value={projectForm.priority} onChange={handleProjectChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select></label>
-              </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">담당 조직</Text><input value={projectForm.owner} onChange={handleProjectChange('owner')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="담당 팀 또는 담당자를 입력해 주세요" /></label>
+                  <label className="block space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <Text variant="detail20" color="text-fg-tertiary">우선순위</Text>
+                      <FieldHelpButton
+                        label="프로젝트 우선순위"
+                        note="프로젝트의 전체 중요도를 정하는 값입니다. 최우선은 가장 먼저 챙겨야 할 프로젝트, 높음은 주요하게 관리할 프로젝트, 보통은 일반 관리 대상으로 이해하면 됩니다."
+                        isOpen={activeFieldHelp === 'project-priority'}
+                        onToggle={() => setActiveFieldHelp((current) => current === 'project-priority' ? null : 'project-priority')}
+                      />
+                    </div>
+                    <select value={projectForm.priority} onChange={handleProjectChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select>
+                  </label>
+                </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시작일</Text><input type="date" value={projectForm.startDate} onChange={(event) => setProjectForm((current) => ({ ...current, startDate: event.target.value, periodPreset: 'custom' }))} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
                 <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">종료일</Text><input type="date" value={projectForm.endDate} onChange={(event) => setProjectForm((current) => ({ ...current, endDate: event.target.value, periodPreset: 'custom' }))} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
@@ -1157,10 +1213,32 @@ export default function Home() {
                 </div>
               </div>
             )}
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 구분</Text><select value={scheduleForm.kind} onChange={handleScheduleChange('kind')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="major">주요 일정</option><option value="general">일반 일정</option></select></label>
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">우선순위</Text><select value={scheduleForm.priority} onChange={handleScheduleChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select></label>
-            </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Text variant="detail20" color="text-fg-tertiary">일정 구분</Text>
+                    <FieldHelpButton
+                      label="일정 구분"
+                      note="주요 일정은 꼭 챙겨야 하는 마일스톤이나 핵심 일정입니다. 일반 일정은 진행 중 확인이 필요한 일반 업무 일정입니다."
+                      isOpen={activeFieldHelp === 'schedule-kind'}
+                      onToggle={() => setActiveFieldHelp((current) => current === 'schedule-kind' ? null : 'schedule-kind')}
+                    />
+                  </div>
+                  <select value={scheduleForm.kind} onChange={handleScheduleChange('kind')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="major">주요 일정</option><option value="general">일반 일정</option></select>
+                </label>
+                <label className="block space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Text variant="detail20" color="text-fg-tertiary">우선순위</Text>
+                    <FieldHelpButton
+                      label="일정 우선순위"
+                      note="일정 우선순위는 개별 일정의 시급함을 나타냅니다. 최우선은 당장 챙겨야 하는 일정, 높음은 가까운 시점에 우선 확인할 일정, 보통은 일반 관리 일정입니다."
+                      isOpen={activeFieldHelp === 'schedule-priority'}
+                      onToggle={() => setActiveFieldHelp((current) => current === 'schedule-priority' ? null : 'schedule-priority')}
+                    />
+                  </div>
+                  <select value={scheduleForm.priority} onChange={handleScheduleChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select>
+                </label>
+              </div>
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
               <label className="flex items-center gap-3 px-1 py-1">
@@ -1206,9 +1284,11 @@ export default function Home() {
     <main className="min-h-screen bg-surface">
       <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={() => setIsGoogleScriptReady(true)} />
       <div className="mx-auto flex min-h-screen w-full max-w-[1120px] flex-col gap-6 px-5 py-6 md:px-8 md:py-8">
-        <div className="flex items-center justify-between gap-4 px-1">
-          <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
-          {isConnected ? (
+          <div className="flex items-center justify-between gap-4 px-1">
+            <button type="button" onClick={goToDashboardHome} className="text-left">
+              <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
+            </button>
+            {isConnected ? (
             <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => setActiveTab('calendar')}>
               <Text variant="detail20" color="text-fg-primary">{googleEmail || '연결된 구글 계정'}</Text>
             </button>
@@ -1240,10 +1320,10 @@ export default function Home() {
               </div>
             </div>
           </section>
-        <section className="space-y-4">
-          <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" onClick={() => setActiveTab(tab.key)}>{tab.label}</Button>)}</div></Card>
-          {renderTabContent()}
-        </section>
+          <section className="space-y-4">
+            <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => setActiveTab(tab.key)}>{tab.label}</Button>)}</div></Card>
+            {renderTabContent()}
+          </section>
       </div>
     </main>
   )
