@@ -343,6 +343,43 @@ function ScheduleKindBadge({ kind }: { kind: ScheduleKind }) {
   return <div className={`rounded-full px-3 py-2 ${scheduleKindTone[kind]}`}><Text variant="detail20">{kind === 'major' ? '주요 일정' : '일반 일정'}</Text></div>
 }
 
+function ProjectMetaBadge({ className, label, onClick }: { className: string; label: string; onClick?: () => void }) {
+  const content = (
+    <div className={`rounded-full border px-2.5 py-1 ${className}`}>
+      <span className="text-[12px] font-[500] leading-[16px] tracking-[0px]">{label}</span>
+    </div>
+  )
+
+  if (!onClick) return content
+
+  return (
+    <button type="button" onClick={onClick} className="transition hover:opacity-80">
+      {content}
+    </button>
+  )
+}
+
+function ProjectActionIconButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-fg-tertiary transition hover:bg-black/5 hover:text-fg-primary"
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function Home() {
   const todayKey = formatLocalDateKey(new Date())
   const [isGoogleScriptReady, setIsGoogleScriptReady] = useState(false)
@@ -641,6 +678,7 @@ export default function Home() {
   }
 
   const removeProject = (projectId: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('정말 삭제하시겠습니까?')) return
     const remainingProjects = projects.filter((project) => project.id !== projectId)
     setProjects(remainingProjects)
     setSchedules((current) => current.filter((schedule) => schedule.projectId !== projectId))
@@ -658,40 +696,53 @@ export default function Home() {
         <Card padding="lg" className="border-transparent bg-surface-primary shadow-m">
           <div className="space-y-4">
             {projectTimelineCards.map((project) => (
-              <Card key={project.id} padding="md" className="border-transparent bg-white shadow-s">
-                <div className="space-y-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                      <Text variant="body24" as="h3" color="text-fg-primary">{project.name}</Text>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Text variant="detail20" color="text-fg-secondary">{project.duration}</Text>
-                        <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
-                        <Text variant="detail20" color="text-fg-secondary">{project.owner}</Text>
+                <Card key={project.id} padding="md" className="border-transparent bg-white shadow-s">
+                  <div className="space-y-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between">
+                      <div className="space-y-2 pt-1 lg:flex lg:min-h-[72px] lg:flex-col lg:justify-between lg:pt-1.5">
+                        <Text variant="projectTitle" as="h3" color="text-fg-primary">{project.name}</Text>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Text variant="detail20" color="text-fg-secondary">{project.duration}</Text>
+                          <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+                          <Text variant="detail20" color="text-fg-secondary">{project.owner}</Text>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-start gap-3 lg:min-h-[72px] lg:items-end lg:justify-between">
+                        <div className="flex items-center gap-2">
+                          <ProjectActionIconButton label="프로젝트 수정" onClick={() => editProject(project.id)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                            </svg>
+                          </ProjectActionIconButton>
+                          <ProjectActionIconButton label="프로젝트 삭제" onClick={() => removeProject(project.id)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4h8v2" />
+                              <path d="M19 6l-1 14H6L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                            </svg>
+                          </ProjectActionIconButton>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <ProjectMetaBadge className="border-red-300 bg-red-300/15 text-red-900" label={project.priority} />
+                          <ProjectMetaBadge
+                            className="border-blue-200 bg-blue-50 text-blue-900"
+                            label={`잔여 일정 ${project.remainingCount}건`}
+                            onClick={() => applyProjectRemainingShortcut(project.id)}
+                          />
+                        </div>
                       </div>
                     </div>
-                      <div className="flex flex-wrap gap-2">
-                        <PriorityBadge priority={project.priority} />
-                        <button
-                          type="button"
-                          onClick={() => applyProjectRemainingShortcut(project.id)}
-                          className="rounded-full bg-blue-50 px-3 py-2 transition hover:bg-blue-100"
-                        >
-                          <Text variant="detail20" color="text-blue-900">잔여 일정 {project.remainingCount}건</Text>
-                        </button>
-                      </div>
+                    <TimelineTrack startMonth={getMonthIndexFromDate(project.startDate)} endMonth={getMonthIndexFromDate(project.endDate)} />
+                    <div className="rounded-[24px] bg-surface-primary p-4">
+                      <Text variant="detail20" color="text-fg-tertiary">다음 주요 일정</Text>
+                      <Text variant="detail20" color="text-fg-primary" className="mt-2">{project.milestone}</Text>
                     </div>
-                  <TimelineTrack startMonth={getMonthIndexFromDate(project.startDate)} endMonth={getMonthIndexFromDate(project.endDate)} />
-                  <div className="rounded-[24px] bg-surface-primary p-4">
-                    <Text variant="detail20" color="text-fg-tertiary">다음 주요 일정</Text>
-                    <Text variant="detail20" color="text-fg-primary" className="mt-2">{project.milestone}</Text>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button variant="outlineDark" size="sm" shape="round" onClick={() => editProject(project.id)}>프로젝트 수정</Button>
-                    <Button variant="outlineDark" size="sm" shape="round" onClick={() => removeProject(project.id)}>프로젝트 삭제</Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
           </div>
         </Card>
       )
