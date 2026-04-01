@@ -882,14 +882,14 @@ export default function Home() {
                       {project.nextSchedules.length > 0 ? (
                           <div className="grid gap-3 xl:grid-cols-2">
                             {project.nextSchedules.map((schedule) => (
-                              <div key={schedule.id} className="rounded-[24px] bg-[#f8f9fb] p-4">
+                                <div key={schedule.id} className="rounded-[24px] bg-[#fbfcfd] p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <CompactScheduleBadge
                                       className={schedule.kind === 'major' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-gray-200 bg-white text-fg-tertiary'}
                                       label={schedule.kind === 'major' ? '주요 일정' : '일반 일정'}
                                     />
-                                    <CompactScheduleBadge className={schedule.priority === '최우선' ? 'border-red-300 bg-red-300/15 text-red-900' : schedule.priority === '높음' ? 'border-amber-300 bg-amber-300/15 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'} label={schedule.priority} />
+                                    <CompactScheduleBadge className={schedule.priority === '최우선' ? 'border-red-300 bg-red-300/15 text-red-900' : schedule.priority === '높음' ? 'border-amber-400 bg-amber-100 text-amber-950' : 'border-blue-200 bg-blue-50 text-blue-900'} label={schedule.priority} />
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <ProjectActionIconButton label="일정 수정" onClick={() => editSchedule(schedule.id)}>
