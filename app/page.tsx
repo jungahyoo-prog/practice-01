@@ -322,11 +322,11 @@ function TimelineTrack({ startMonth, endMonth }: { startMonth: number; endMonth:
         {timelineMonths.map((month, index) => {
           const isActive = index >= startMonth && index <= endMonth
           return (
-            <div key={month} className="space-y-2">
-              <div className="rounded-full bg-surface-primary px-3 py-2 text-center">
+            <div key={month} className="space-y-1">
+              <div className="px-1 text-center">
                 <Text variant="detail20" color="text-fg-tertiary" align="center">{month}</Text>
               </div>
-              <div className={['h-4 rounded-full transition-colors', isActive ? 'bg-blue-800 shadow-s' : 'bg-surface-primary'].join(' ')} />
+              <div className={['h-3 rounded-full transition-colors', isActive ? 'bg-blue-800 shadow-s' : 'bg-surface-primary'].join(' ')} />
             </div>
           )
         })}
