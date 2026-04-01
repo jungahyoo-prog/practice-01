@@ -100,7 +100,16 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     setGoogleEmail('')
   }
 
-  const addEventToCalendar = async (payload: { calendarId: string; title: string; date: string; time: string; memo: string; projectName?: string }) => {
+  const addEventToCalendar = async (payload: {
+    calendarId: string
+    title: string
+    date: string
+    time: string
+    repeatType?: 'none' | 'daily' | 'weekday' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+    repeatCustom?: string
+    memo: string
+    projectName?: string
+  }) => {
     if (!accessToken) throw new Error('missing-access-token')
 
     setIsSavingEvent(true)

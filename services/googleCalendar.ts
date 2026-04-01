@@ -16,6 +16,8 @@ type CalendarEventPayload = {
   title: string
   date: string
   time: string
+  repeatType?: 'none' | 'daily' | 'weekday' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+  repeatCustom?: string
   memo: string
   projectName?: string
 }
@@ -35,6 +37,28 @@ function buildGoogleCalendarDescription(projectName?: string, memo?: string) {
 
 function buildDateTime(date: string, time: string) {
   return `${date}T${time}:00`
+}
+
+function buildRecurringRule(date: string, repeatType?: CalendarEventPayload['repeatType'], repeatCustom?: string) {
+  if (!repeatType || repeatType === 'none') return undefined
+
+  const parsedDate = new Date(`${date}T00:00:00`)
+  const byDay = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][parsedDate.getDay()]
+  const dayOfMonth = parsedDate.getDate()
+  const monthOfYear = parsedDate.getMonth() + 1
+
+  if (repeatType === 'custom') {
+    if (!repeatCustom) return undefined
+    return repeatCustom.startsWith('RRULE:') ? repeatCustom : `RRULE:${repeatCustom}`
+  }
+
+  if (repeatType === 'daily') return 'RRULE:FREQ=DAILY'
+  if (repeatType === 'weekday') return 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'
+  if (repeatType === 'weekly') return `RRULE:FREQ=WEEKLY;BYDAY=${byDay}`
+  if (repeatType === 'monthly') return `RRULE:FREQ=MONTHLY;BYMONTHDAY=${dayOfMonth}`
+  if (repeatType === 'yearly') return `RRULE:FREQ=YEARLY;BYMONTH=${monthOfYear};BYMONTHDAY=${dayOfMonth}`
+
+  return undefined
 }
 
 export async function fetchGoogleCalendars(accessToken: string) {
@@ -62,6 +86,7 @@ export async function createGoogleCalendarEvent(accessToken: string, calendarId:
   const startDateTime = new Date(buildDateTime(payload.date, payload.time))
   const endDateTime = new Date(startDateTime)
   endDateTime.setHours(endDateTime.getHours() + 1)
+  const recurrence = buildRecurringRule(payload.date, payload.repeatType, payload.repeatCustom)
 
   const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
     method: 'POST',
@@ -80,6 +105,7 @@ export async function createGoogleCalendarEvent(accessToken: string, calendarId:
         dateTime: endDateTime.toISOString(),
         timeZone: 'Asia/Seoul',
       },
+      recurrence: recurrence ? [recurrence] : undefined,
     }),
   })
 

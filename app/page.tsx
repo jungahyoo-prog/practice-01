@@ -9,6 +9,7 @@ import { useGoogleCalendar } from '@/hooks/useGoogleCalendar'
 
 type ScheduleKind = 'major' | 'general'
 type PriorityLevel = '최우선' | '높음' | '보통'
+type ScheduleRepeatType = 'none' | 'daily' | 'weekday' | 'weekly' | 'monthly' | 'yearly' | 'custom'
 type DashboardTab = 'project-view' | 'schedule-list' | 'project-create' | 'schedule-create' | 'calendar'
 type ScheduleQuickFilter = 'all' | 'major' | 'high-priority'
 type CalendarFeedback = { tone: 'default' | 'success' | 'error'; text: string }
@@ -31,6 +32,9 @@ type ScheduleItem = {
   time: string
   priority: PriorityLevel
   kind: ScheduleKind
+  repeatType: ScheduleRepeatType
+  repeatCustom: string
+  repeatCustomLabel: string
   memo: string
 }
 
@@ -48,6 +52,9 @@ type ScheduleFormState = {
   title: string
   date: string
   time: string
+  repeatType: ScheduleRepeatType
+  repeatCustom: string
+  repeatCustomLabel: string
   priority: PriorityLevel
   kind: ScheduleKind
   memo: string
@@ -58,6 +65,13 @@ type ScheduleFilters = {
   startDate: string
   endDate: string
   priority: '' | PriorityLevel
+}
+
+type CustomRepeatFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
+type CustomRepeatConfig = {
+  interval: string
+  frequency: CustomRepeatFrequency
+  weeklyDays: string[]
 }
 
 const tabs: { key: DashboardTab; label: string }[] = [
@@ -94,12 +108,12 @@ const initialProjects: ProjectItem[] = [
 ]
 
 const initialSchedules: ScheduleItem[] = [
-  { id: 'brand-weekly', projectId: 'brand-renewal', title: '브랜드 개편 주간 싱크', date: '2026-04-01', time: '15:00', priority: '최우선', kind: 'major', memo: '핵심 의사결정 항목과 다음 단계 정리' },
-  { id: 'growth-share', projectId: 'growth-campaign', title: 'A/B 테스트 결과 공유', date: '2026-04-03', time: '11:00', priority: '높음', kind: 'major', memo: '전환 데이터 리뷰와 후속 실험 선정' },
-  { id: 'growth-risk', projectId: 'growth-campaign', title: '프로젝트 리스크 점검', date: '2026-04-05', time: '14:00', priority: '보통', kind: 'general', memo: '일정 지연 요인과 리소스 점검' },
-  { id: 'brand-review', projectId: 'brand-renewal', title: '상반기 중간 리뷰', date: '2026-04-08', time: '16:30', priority: '최우선', kind: 'major', memo: '중간 산출물 리뷰와 방향성 체크' },
-  { id: 'ops-kickoff', projectId: 'ops-automation', title: '자동화 정비 킥오프', date: '2026-04-10', time: '10:00', priority: '높음', kind: 'general', memo: '범위 정의와 우선 과제 확인' },
-  { id: 'ops-review', projectId: 'ops-automation', title: '업무 플로우 리뷰', date: '2026-04-18', time: '16:00', priority: '보통', kind: 'major', memo: '자동화 후 업무 흐름 비교' },
+  { id: 'brand-weekly', projectId: 'brand-renewal', title: '브랜드 개편 주간 싱크', date: '2026-04-01', time: '15:00', priority: '최우선', kind: 'major', repeatType: 'weekly', repeatCustom: '', repeatCustomLabel: '', memo: '핵심 의사결정 항목과 다음 단계 정리' },
+  { id: 'growth-share', projectId: 'growth-campaign', title: 'A/B 테스트 결과 공유', date: '2026-04-03', time: '11:00', priority: '높음', kind: 'major', repeatType: 'none', repeatCustom: '', repeatCustomLabel: '', memo: '전환 데이터 리뷰와 후속 실험 선정' },
+  { id: 'growth-risk', projectId: 'growth-campaign', title: '프로젝트 리스크 점검', date: '2026-04-05', time: '14:00', priority: '보통', kind: 'general', repeatType: 'monthly', repeatCustom: '', repeatCustomLabel: '', memo: '일정 지연 요인과 리소스 점검' },
+  { id: 'brand-review', projectId: 'brand-renewal', title: '상반기 중간 리뷰', date: '2026-04-08', time: '16:30', priority: '최우선', kind: 'major', repeatType: 'none', repeatCustom: '', repeatCustomLabel: '', memo: '중간 산출물 리뷰와 방향성 체크' },
+  { id: 'ops-kickoff', projectId: 'ops-automation', title: '자동화 정비 킥오프', date: '2026-04-10', time: '10:00', priority: '높음', kind: 'general', repeatType: 'daily', repeatCustom: '', repeatCustomLabel: '', memo: '범위 정의와 우선 과제 확인' },
+  { id: 'ops-review', projectId: 'ops-automation', title: '업무 플로우 리뷰', date: '2026-04-18', time: '16:00', priority: '보통', kind: 'major', repeatType: 'none', repeatCustom: '', repeatCustomLabel: '', memo: '자동화 후 업무 흐름 비교' },
 ]
 
 const defaultProjectForm = (): ProjectFormState => ({
@@ -116,6 +130,9 @@ const defaultScheduleForm = (projectId: string): ScheduleFormState => ({
   title: '',
   date: '2026-04-01',
   time: '09:00',
+  repeatType: 'none',
+  repeatCustom: '',
+  repeatCustomLabel: '',
   priority: '보통',
   kind: 'general',
   memo: '',
@@ -139,6 +156,54 @@ function formatDateLabel(date: string, time: string) {
 
 function formatDuration(startMonth: number, endMonth: number) {
   return `2026.${String(startMonth + 1).padStart(2, '0')} - 2026.${String(endMonth + 1).padStart(2, '0')}`
+}
+
+function getRepeatOptionLabels(date: string) {
+  const parsedDate = new Date(`${date}T00:00:00`)
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
+  const dayOfWeek = weekdays[parsedDate.getDay()]
+  const dayOfMonth = parsedDate.getDate()
+  const month = parsedDate.getMonth() + 1
+
+  return {
+    none: '반복 안 함',
+    daily: '매일',
+    weekday: '매주 평일',
+    weekly: `매주 ${dayOfWeek}요일`,
+    monthly: `매월 ${dayOfMonth}일`,
+    yearly: `매년 ${month}월 ${dayOfMonth}일`,
+    custom: '맞춤',
+  } satisfies Record<ScheduleRepeatType, string>
+}
+
+function buildCustomRepeatLabel(config: CustomRepeatConfig, date: string) {
+  const parsedDate = new Date(`${date}T00:00:00`)
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
+  const selectedWeekdays = config.weeklyDays.map((day) => weekdays[Number(day)]).join(', ')
+  const everyLabel = Number(config.interval) > 1 ? `${config.interval}개` : ''
+
+  if (config.frequency === 'DAILY') return everyLabel ? `${config.interval}일마다 반복` : '매일 반복'
+  if (config.frequency === 'WEEKLY') return `${config.interval === '1' ? '매주' : `${config.interval}주마다`} ${selectedWeekdays || weekdays[parsedDate.getDay()]}`
+  if (config.frequency === 'MONTHLY') return `${config.interval === '1' ? '매월' : `${config.interval}개월마다`} ${parsedDate.getDate()}일`
+  return `${config.interval === '1' ? '매년' : `${config.interval}년마다`} ${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일`
+}
+
+function buildCustomRepeatRule(config: CustomRepeatConfig, date: string) {
+  const parsedDate = new Date(`${date}T00:00:00`)
+  const byDay = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+
+  if (config.frequency === 'DAILY') return `RRULE:FREQ=DAILY;INTERVAL=${config.interval}`
+  if (config.frequency === 'WEEKLY') {
+    const weeklyDays = (config.weeklyDays.length ? config.weeklyDays : [String(parsedDate.getDay())]).map((day) => byDay[Number(day)]).join(',')
+    return `RRULE:FREQ=WEEKLY;INTERVAL=${config.interval};BYDAY=${weeklyDays}`
+  }
+  if (config.frequency === 'MONTHLY') return `RRULE:FREQ=MONTHLY;INTERVAL=${config.interval};BYMONTHDAY=${parsedDate.getDate()}`
+  return `RRULE:FREQ=YEARLY;INTERVAL=${config.interval};BYMONTH=${parsedDate.getMonth() + 1};BYMONTHDAY=${parsedDate.getDate()}`
+}
+
+function formatRepeatLabel(schedule: Pick<ScheduleItem, 'date' | 'repeatType' | 'repeatCustom' | 'repeatCustomLabel'>) {
+  if (schedule.repeatType === 'custom') return schedule.repeatCustomLabel || '맞춤 설정'
+  return getRepeatOptionLabels(schedule.date)[schedule.repeatType]
 }
 
 function toGoogleCalendarDateTime(date: string, time: string) {
@@ -204,6 +269,8 @@ export default function Home() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<ProjectFormState>(defaultProjectForm())
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id))
+  const [isCustomRepeatMenuOpen, setIsCustomRepeatMenuOpen] = useState(false)
+  const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id).date}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const { authorize, calendars, disconnect, googleClientId, googleEmail, isAuthorizing, isCalendarsLoading, isConnected, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
@@ -244,6 +311,20 @@ export default function Home() {
     ],
     [projects.length, schedules, todayKey],
   )
+  const repeatOptionLabels = useMemo(() => getRepeatOptionLabels(scheduleForm.date), [scheduleForm.date])
+  const customRepeatPreviewLabel = useMemo(() => buildCustomRepeatLabel(customRepeatConfig, scheduleForm.date), [customRepeatConfig, scheduleForm.date])
+  const repeatWeekdayOptions = useMemo(
+    () => [
+      { key: '0', label: '일' },
+      { key: '1', label: '월' },
+      { key: '2', label: '화' },
+      { key: '3', label: '수' },
+      { key: '4', label: '목' },
+      { key: '5', label: '금' },
+      { key: '6', label: '토' },
+    ],
+    [],
+  )
 
   const effectiveCalendarId = isConnected ? selectedCalendarId : calendarId
   const calendarEmbedUrl = effectiveCalendarId ? buildGoogleCalendarEmbedUrl(effectiveCalendarId) : ''
@@ -263,9 +344,23 @@ export default function Home() {
   }
 
   const handleAddScheduleToCalendar = async (schedule: ScheduleItem, projectName?: string) => {
+    const resolvedRepeatCustom =
+      schedule.repeatType === 'custom' && !schedule.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, schedule.date) : schedule.repeatCustom
+    const resolvedRepeatCustomLabel =
+      schedule.repeatType === 'custom' && !schedule.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, schedule.date) : schedule.repeatCustomLabel
+
     if (isConnected && selectedCalendarId) {
       try {
-        await addEventToCalendar({ calendarId: selectedCalendarId, title: schedule.title, date: schedule.date, time: schedule.time, memo: schedule.memo, projectName })
+        await addEventToCalendar({
+          calendarId: selectedCalendarId,
+          title: schedule.title,
+          date: schedule.date,
+          time: schedule.time,
+          repeatType: schedule.repeatType,
+          repeatCustom: resolvedRepeatCustom,
+          memo: schedule.memo,
+          projectName,
+        })
         setCalendarFeedback({ tone: 'success', text: `선택한 캘린더${selectedCalendar?.summary ? `(${selectedCalendar.summary})` : ''}에 일정이 저장되었습니다.` })
         setActiveTab('calendar')
       } catch {
@@ -274,7 +369,7 @@ export default function Home() {
       return
     }
 
-    openGoogleCalendar(buildGoogleCalendarEventUrl(schedule, projectName, effectiveCalendarId))
+    openGoogleCalendar(buildGoogleCalendarEventUrl({ ...schedule, repeatCustom: resolvedRepeatCustom, repeatCustomLabel: resolvedRepeatCustomLabel }, projectName, effectiveCalendarId))
     setCalendarFeedback({ tone: 'default', text: '로그인 연동이 없어 브라우저의 기본 캘린더 추가 화면으로 열었습니다.' })
   }
 
@@ -291,6 +386,24 @@ export default function Home() {
   const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setProjectForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleChange = (field: keyof ScheduleFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
+  const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setCustomRepeatConfig((current) => ({ ...current, [field]: event.target.value }))
+
+  const toggleCustomRepeatWeekday = (day: string) =>
+    setCustomRepeatConfig((current) => ({
+      ...current,
+      weeklyDays: current.weeklyDays.includes(day) ? current.weeklyDays.filter((item) => item !== day) : [...current.weeklyDays, day].sort(),
+    }))
+
+  const applyCustomRepeatConfig = () => {
+    setScheduleForm((current) => ({
+      ...current,
+      repeatType: 'custom',
+      repeatCustom: buildCustomRepeatRule(customRepeatConfig, current.date),
+      repeatCustomLabel: buildCustomRepeatLabel(customRepeatConfig, current.date),
+    }))
+    setIsCustomRepeatMenuOpen(false)
+  }
 
   const resetProjectForm = () => {
     setEditingProjectId(null)
@@ -300,6 +413,7 @@ export default function Home() {
   const resetScheduleForm = (projectId?: string) => {
     setEditingScheduleId(null)
     setScheduleForm(defaultScheduleForm(projectId ?? projects[0]?.id ?? ''))
+    setIsCustomRepeatMenuOpen(false)
   }
 
   const saveProject = () => {
@@ -313,7 +427,22 @@ export default function Home() {
   }
 
   const saveSchedule = () => {
-    const nextSchedule: ScheduleItem = { id: editingScheduleId ?? `schedule-${Date.now()}`, projectId: scheduleForm.projectId, title: scheduleForm.title || '새 일정', date: scheduleForm.date, time: scheduleForm.time, priority: scheduleForm.priority, kind: scheduleForm.kind, memo: scheduleForm.memo || '메모 없음' }
+    const resolvedRepeatCustom = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustom
+    const resolvedRepeatCustomLabel = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustomLabel
+
+    const nextSchedule: ScheduleItem = {
+      id: editingScheduleId ?? `schedule-${Date.now()}`,
+      projectId: scheduleForm.projectId,
+      title: scheduleForm.title || '새 일정',
+      date: scheduleForm.date,
+      time: scheduleForm.time,
+      repeatType: scheduleForm.repeatType,
+      repeatCustom: resolvedRepeatCustom,
+      repeatCustomLabel: resolvedRepeatCustomLabel,
+      priority: scheduleForm.priority,
+      kind: scheduleForm.kind,
+      memo: scheduleForm.memo || '메모 없음',
+    }
     setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? nextSchedule : schedule)) : [...current, nextSchedule]))
     setActiveTab('schedule-list')
     resetScheduleForm(scheduleForm.projectId)
@@ -331,7 +460,18 @@ export default function Home() {
     const target = schedules.find((schedule) => schedule.id === scheduleId)
     if (!target) return
     setEditingScheduleId(scheduleId)
-    setScheduleForm({ projectId: target.projectId, title: target.title, date: target.date, time: target.time, priority: target.priority, kind: target.kind, memo: target.memo })
+    setScheduleForm({
+      projectId: target.projectId,
+      title: target.title,
+      date: target.date,
+      time: target.time,
+      repeatType: target.repeatType,
+      repeatCustom: target.repeatCustom,
+      repeatCustomLabel: target.repeatCustomLabel,
+      priority: target.priority,
+      kind: target.kind,
+      memo: target.memo,
+    })
     setActiveTab('schedule-create')
   }
 
@@ -420,6 +560,7 @@ export default function Home() {
                           <div className="flex flex-wrap gap-2"><ScheduleKindBadge kind={schedule.kind} /><PriorityBadge priority={schedule.priority} /></div>
                           <Text variant="body24" as="h3" color="text-fg-primary">{schedule.title}</Text>
                           <Text variant="detail20" color="text-fg-secondary">{project?.name ?? '연결된 프로젝트 없음'}</Text>
+                          <Text variant="detail20" color="text-fg-tertiary">{formatRepeatLabel(schedule)}</Text>
                         </div>
                         <Text variant="detail20" color="text-fg-tertiary">{formatDateLabel(schedule.date, schedule.time)}</Text>
                       </div>
@@ -470,13 +611,103 @@ export default function Home() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시간</Text><input type="time" value={scheduleForm.time} onChange={handleScheduleChange('time')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 구분</Text><select value={scheduleForm.kind} onChange={handleScheduleChange('kind')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="major">주요 일정</option><option value="general">일반 일정</option></select></label>
+              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">반복 여부</Text><select value={scheduleForm.repeatType} onChange={(event) => {
+                const nextValue = event.target.value as ScheduleRepeatType
+                if (nextValue === 'custom') {
+                  setScheduleForm((current) => ({ ...current, repeatType: 'custom' }))
+                  setIsCustomRepeatMenuOpen(true)
+                  return
+                }
+                setScheduleForm((current) => ({ ...current, repeatType: nextValue, repeatCustom: '', repeatCustomLabel: '' }))
+                setIsCustomRepeatMenuOpen(false)
+              }} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="none">{repeatOptionLabels.none}</option><option value="daily">{repeatOptionLabels.daily}</option><option value="weekday">{repeatOptionLabels.weekday}</option><option value="weekly">{repeatOptionLabels.weekly}</option><option value="monthly">{repeatOptionLabels.monthly}</option><option value="yearly">{repeatOptionLabels.yearly}</option><option value="custom">{repeatOptionLabels.custom}</option></select></label>
             </div>
+            {scheduleForm.repeatType === 'custom' && (
+              <div className="space-y-3">
+                <Text variant="detail20" color="text-fg-tertiary">맞춤 설정</Text>
+                <div className="relative">
+                  <Button variant="outlineDark" size="sm" shape="round" onClick={() => setIsCustomRepeatMenuOpen((current) => !current)}>
+                    {scheduleForm.repeatCustomLabel || customRepeatPreviewLabel}
+                  </Button>
+                  {isCustomRepeatMenuOpen && (
+                    <Card padding="md" className="absolute left-0 top-[58px] z-20 w-full border-[var(--color-border)] bg-white shadow-l">
+                      <div className="space-y-4">
+                        <div className="grid gap-4 md:grid-cols-[100px_minmax(0,1fr)]">
+                          <label className="block space-y-2">
+                            <Text variant="detail20" color="text-fg-tertiary">반복</Text>
+                            <input type="number" min="1" value={customRepeatConfig.interval} onChange={handleCustomRepeatChange('interval')} className="w-full rounded-[18px] border border-[var(--color-border)] bg-surface px-3 py-2 text-body1 text-fg-primary outline-none transition focus:border-blue-800" />
+                          </label>
+                          <label className="block space-y-2">
+                            <Text variant="detail20" color="text-fg-tertiary">주기</Text>
+                            <select value={customRepeatConfig.frequency} onChange={handleCustomRepeatChange('frequency')} className="w-full rounded-[18px] border border-[var(--color-border)] bg-surface px-3 py-2 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                              <option value="DAILY">일</option>
+                              <option value="WEEKLY">주</option>
+                              <option value="MONTHLY">월</option>
+                              <option value="YEARLY">년</option>
+                            </select>
+                          </label>
+                        </div>
+                        {customRepeatConfig.frequency === 'WEEKLY' && (
+                          <div className="space-y-2">
+                            <Text variant="detail20" color="text-fg-tertiary">반복 요일</Text>
+                            <div className="flex flex-wrap gap-2">
+                              {repeatWeekdayOptions.map((day) => (
+                                <Button key={day.key} variant={customRepeatConfig.weeklyDays.includes(day.key) ? 'primary' : 'outlineDark'} size="sm" shape="round" onClick={() => toggleCustomRepeatWeekday(day.key)}>
+                                  {day.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap justify-end gap-3">
+                          <Button variant="outlineDark" size="sm" shape="round" onClick={() => setIsCustomRepeatMenuOpen(false)}>
+                            닫기
+                          </Button>
+                          <Button variant="primary" size="sm" shape="round" onClick={applyCustomRepeatConfig}>
+                            적용
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
+              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 구분</Text><select value={scheduleForm.kind} onChange={handleScheduleChange('kind')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="major">주요 일정</option><option value="general">일반 일정</option></select></label>
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">우선순위</Text><select value={scheduleForm.priority} onChange={handleScheduleChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select></label>
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
             </div>
-            <div className="rounded-[24px] bg-surface-primary p-4"><div className="flex flex-wrap gap-2"><ScheduleKindBadge kind={scheduleForm.kind} /><PriorityBadge priority={scheduleForm.priority} /></div><Text variant="detail20" color="text-fg-primary" className="mt-3">{scheduleForm.title || '새 일정'}</Text><Text variant="detail20" color="text-fg-secondary" className="mt-1">{formatDateLabel(scheduleForm.date, scheduleForm.time)}</Text></div>
+            <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
+            <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outlineDark"
+                  size="sm"
+                  shape="round"
+                  loading={isSavingEvent}
+                  onClick={() =>
+                    void handleAddScheduleToCalendar(
+                      {
+                        id: editingScheduleId ?? 'draft-schedule',
+                        projectId: scheduleForm.projectId,
+                        title: scheduleForm.title || '새 일정',
+                        date: scheduleForm.date,
+                        time: scheduleForm.time,
+                        repeatType: scheduleForm.repeatType,
+                        repeatCustom: scheduleForm.repeatCustom,
+                        repeatCustomLabel: scheduleForm.repeatCustomLabel,
+                        priority: scheduleForm.priority,
+                        kind: scheduleForm.kind,
+                        memo: scheduleForm.memo || '메모 없음',
+                      },
+                      projects.find((project) => project.id === scheduleForm.projectId)?.name,
+                    )
+                  }
+                >
+                  구글 캘린더 등록하기
+                </Button>
+              </div>
+            </Card>
             <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" onClick={saveSchedule}>{editingScheduleId ? '일정 수정 완료' : '일정 저장'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => resetScheduleForm(scheduleForm.projectId)}>입력 초기화</Button></div>
           </div>
         </Card>
@@ -504,7 +735,7 @@ export default function Home() {
             )}
             {!isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">열어볼 캘린더 ID 또는 이메일</Text><input value={calendarId} onChange={(event) => setCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="example@group.calendar.google.com" /></label>}
             <div className="rounded-[28px] bg-surface-primary p-5"><Text variant="detail20" color="text-fg-tertiary">연동 상태</Text><Text variant="detail20" color={calendarFeedback.tone === 'error' ? 'text-red-700' : calendarFeedback.tone === 'success' ? 'text-blue-900' : 'text-fg-secondary'} className="mt-2">{calendarFeedback.text}</Text></div>
-            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button><Button variant="outlineDark" size="sm" shape="round" loading={isSavingEvent} onClick={() => void handleAddScheduleToCalendar({ id: 'preview', projectId: scheduleForm.projectId, title: scheduleForm.title || '새 일정', date: scheduleForm.date, time: scheduleForm.time, priority: scheduleForm.priority, kind: scheduleForm.kind, memo: scheduleForm.memo || '메모 없음' }, projects.find((project) => project.id === scheduleForm.projectId)?.name)}>현재 입력 일정 추가</Button></div>
+            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => setActiveTab('schedule-create')}>새 일정 추가하기</Button></div>
           </div>
         </Card>
         <Card padding="none" className="overflow-hidden border-transparent bg-white shadow-m"><div className="border-b border-[var(--color-border)] px-6 py-5"><Text variant="body24" as="h2" color="text-fg-primary">선택한 구글 캘린더 보기</Text><Text variant="detail20" color="text-fg-secondary" className="mt-2">{effectiveCalendarId || '캘린더 ID를 입력하거나 구글 계정에 로그인하면 여기에 표시됩니다.'}</Text></div>{calendarEmbedUrl ? <iframe title="Google Calendar Preview" src={calendarEmbedUrl} className="h-[520px] w-full border-0" /> : <div className="px-6 py-10"><Text variant="detail20" color="text-fg-secondary">표시할 캘린더를 아직 고르지 않았습니다.</Text></div>}</Card>
