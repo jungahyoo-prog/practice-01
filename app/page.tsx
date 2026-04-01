@@ -217,6 +217,14 @@ function getLastDayOfMonth(month: number) {
   return new Date(2026, month, 0).getDate()
 }
 
+function getMonthDateRange(monthIndex: number) {
+  const month = monthIndex + 1
+  return {
+    startDate: `2026-${String(month).padStart(2, '0')}-01`,
+    endDate: `2026-${String(month).padStart(2, '0')}-${String(getLastDayOfMonth(month)).padStart(2, '0')}`,
+  }
+}
+
 function buildProjectPeriodRange(preset: ProjectPeriodPreset) {
   if (preset === 'custom') return null
 
@@ -315,7 +323,15 @@ function buildGoogleCalendarViewUrl(calendarId: string) {
   return `https://calendar.google.com/calendar/u/0/r/day?${new URLSearchParams({ src: calendarId, ctz: 'Asia/Seoul' }).toString()}`
 }
 
-function TimelineTrack({ startMonth, endMonth }: { startMonth: number; endMonth: number }) {
+function TimelineTrack({
+  startMonth,
+  endMonth,
+  onMonthClick,
+}: {
+  startMonth: number
+  endMonth: number
+  onMonthClick?: (monthIndex: number) => void
+}) {
   return (
     <div className="overflow-x-auto">
       <div className="grid min-w-[720px] gap-2" style={{ gridTemplateColumns: `repeat(${timelineMonths.length}, minmax(0, 1fr))` }}>
@@ -326,7 +342,9 @@ function TimelineTrack({ startMonth, endMonth }: { startMonth: number; endMonth:
               <div className="px-1 text-center">
                 <Text variant="detail20" color="text-fg-tertiary" align="center">{month}</Text>
               </div>
-              <div className={['h-3 rounded-full transition-colors', isActive ? 'bg-blue-800 shadow-s' : 'bg-surface-primary'].join(' ')} />
+              <button type="button" onClick={() => onMonthClick?.(index)} className="block w-full" aria-label={`${month} 일정 보기`}>
+                <div className={['h-3 rounded-full transition-colors', isActive ? 'bg-blue-800 shadow-s' : 'bg-surface-primary'].join(' ')} />
+              </button>
             </div>
           )
         })}
@@ -341,6 +359,14 @@ function PriorityBadge({ priority }: { priority: PriorityLevel }) {
 
 function ScheduleKindBadge({ kind }: { kind: ScheduleKind }) {
   return <div className={`rounded-full px-3 py-2 ${scheduleKindTone[kind]}`}><Text variant="detail20">{kind === 'major' ? '주요 일정' : '일반 일정'}</Text></div>
+}
+
+function CompactScheduleBadge({ className, label }: { className: string; label: string }) {
+  return (
+    <div className={`rounded-full border px-2.5 py-1 ${className}`}>
+      <span className="text-[12px] font-[500] leading-[16px] tracking-[0px]">{label}</span>
+    </div>
+  )
 }
 
 function ProjectMetaBadge({ className, label, onClick }: { className: string; label: string; onClick?: () => void }) {
@@ -427,14 +453,16 @@ export default function Home() {
   const projectTimelineCards = useMemo(
     () =>
       projects.map((project) => {
-        const milestones = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.kind === 'major' && schedule.date >= todayKey)
+        const upcomingProjectSchedules = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey)
+        const milestones = upcomingProjectSchedules.filter((schedule) => schedule.kind === 'major')
         const remainingCount = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey).length
-        const nextMilestone = milestones[0]
+        const nextSchedules = upcomingProjectSchedules.slice(0, 2)
         return {
           ...project,
           duration: formatProjectDuration(project.startDate, project.endDate),
           remainingCount,
-          milestone: nextMilestone ? `${nextMilestone.title} · ${formatDateLabel(nextMilestone.date, nextMilestone.time)}` : '남아 있는 주요 일정이 없습니다.',
+          nextSchedules,
+          milestone: milestones[0] ? `${milestones[0].title} · ${formatDateLabel(milestones[0].date, milestones[0].time)}` : '남아 있는 주요 일정이 없습니다.',
         }
       }),
     [projects, sortedSchedules, todayKey],
@@ -448,6 +476,18 @@ export default function Home() {
     ],
     [projects.length, schedules, todayKey],
   )
+  const scheduleProjectShortcutMessage = useMemo(() => {
+    if (!scheduleProjectShortcutId) return ''
+    const projectName = projects.find((project) => project.id === scheduleProjectShortcutId)?.name ?? '선택한 프로젝트'
+    if (scheduleFilters.startDate && scheduleFilters.endDate) {
+      const start = new Date(`${scheduleFilters.startDate}T00:00:00`)
+      const end = new Date(`${scheduleFilters.endDate}T00:00:00`)
+      if (start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()) {
+        return `${projectName}의 ${start.getMonth() + 1}월 일정만 보도록 필터가 적용되었습니다.`
+      }
+    }
+    return `${projectName}의 금일 기준 잔여 일정만 보도록 필터가 적용되었습니다.`
+  }, [projects, scheduleFilters.endDate, scheduleFilters.startDate, scheduleProjectShortcutId])
   const repeatOptionLabels = useMemo(() => getRepeatOptionLabels(scheduleForm.date), [scheduleForm.date])
   const customRepeatPreviewLabel = useMemo(() => buildCustomRepeatLabel(customRepeatConfig, scheduleForm.date), [customRepeatConfig, scheduleForm.date])
   const repeatWeekdayOptions = useMemo(
@@ -538,6 +578,14 @@ export default function Home() {
     setScheduleQuickFilter('all')
     setScheduleProjectShortcutId(projectId)
     setScheduleFilters({ projectId, startDate: todayKey, endDate: '', priority: '' })
+  }
+
+  const applyProjectMonthShortcut = (projectId: string, monthIndex: number) => {
+    const { startDate, endDate } = getMonthDateRange(monthIndex)
+    setActiveTab('schedule-list')
+    setScheduleQuickFilter('all')
+    setScheduleProjectShortcutId(projectId)
+    setScheduleFilters({ projectId, startDate, endDate, priority: '' })
   }
 
   const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -687,6 +735,7 @@ export default function Home() {
   }
 
   const removeSchedule = (scheduleId: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('정말 삭제하시겠습니까?')) return
     setSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId))
     if (editingScheduleId === scheduleId) resetScheduleForm(scheduleForm.projectId)
   }
@@ -735,10 +784,53 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                    <TimelineTrack startMonth={getMonthIndexFromDate(project.startDate)} endMonth={getMonthIndexFromDate(project.endDate)} />
-                    <div className="rounded-[24px] bg-surface-primary p-4">
-                      <Text variant="detail20" color="text-fg-tertiary">다음 주요 일정</Text>
-                      <Text variant="detail20" color="text-fg-primary" className="mt-2">{project.milestone}</Text>
+                    <TimelineTrack
+                      startMonth={getMonthIndexFromDate(project.startDate)}
+                      endMonth={getMonthIndexFromDate(project.endDate)}
+                      onMonthClick={(monthIndex) => applyProjectMonthShortcut(project.id, monthIndex)}
+                    />
+                    <div className="space-y-3">
+                      <Text variant="detail20" color="text-fg-tertiary">다음 일정</Text>
+                      {project.nextSchedules.length > 0 ? (
+                          <div className="grid gap-3 xl:grid-cols-2">
+                            {project.nextSchedules.map((schedule) => (
+                              <div key={schedule.id} className="rounded-[24px] bg-[#f8f9fb] p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <CompactScheduleBadge
+                                      className={schedule.kind === 'major' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-gray-200 bg-white text-fg-tertiary'}
+                                      label={schedule.kind === 'major' ? '주요 일정' : '일반 일정'}
+                                    />
+                                    <CompactScheduleBadge className={schedule.priority === '최우선' ? 'border-red-300 bg-red-300/15 text-red-900' : schedule.priority === '높음' ? 'border-amber-300 bg-amber-300/15 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'} label={schedule.priority} />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <ProjectActionIconButton label="일정 수정" onClick={() => editSchedule(schedule.id)}>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 20h9" />
+                                        <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                                      </svg>
+                                    </ProjectActionIconButton>
+                                    <ProjectActionIconButton label="일정 삭제" onClick={() => removeSchedule(schedule.id)}>
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 6h18" />
+                                        <path d="M8 6V4h8v2" />
+                                        <path d="M19 6l-1 14H6L5 6" />
+                                        <path d="M10 11v6" />
+                                        <path d="M14 11v6" />
+                                      </svg>
+                                    </ProjectActionIconButton>
+                                  </div>
+                                </div>
+                                <Text variant="detail20" color="text-fg-primary" className="mt-3">{schedule.title}</Text>
+                                <Text variant="detail20" color="text-fg-secondary" className="mt-1">{formatDateLabel(schedule.date, schedule.time)}</Text>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-[24px] bg-surface-primary p-4">
+                          <Text variant="detail20" color="text-fg-primary">남아 있는 일정이 없습니다.</Text>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -756,7 +848,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-blue-50 px-4 py-3">
                   <Text variant="detail20" color="text-blue-900">
                     {scheduleProjectShortcutId
-                      ? `${projects.find((project) => project.id === scheduleProjectShortcutId)?.name ?? '선택한 프로젝트'}의 금일 기준 잔여 일정만 보도록 필터가 적용되었습니다.`
+                      ? scheduleProjectShortcutMessage
                       : scheduleQuickFilter === 'major'
                         ? '요약 박스에서 남아 있는 주요 일정만 보도록 필터가 적용되었습니다.'
                         : '요약 박스에서 높은 우선순위 일정만 보도록 필터가 적용되었습니다.'}
