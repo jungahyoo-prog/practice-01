@@ -12,6 +12,22 @@ export type GoogleUserProfile = {
   name?: string
 }
 
+export type GoogleCalendarEventItem = {
+  id: string
+  summary?: string
+  description?: string
+  htmlLink?: string
+  status?: string
+  start?: {
+    date?: string
+    dateTime?: string
+  }
+  end?: {
+    date?: string
+    dateTime?: string
+  }
+}
+
 type CalendarEventPayload = {
   title: string
   date: string
@@ -80,6 +96,24 @@ export async function fetchGoogleUserProfile(accessToken: string) {
   if (!response.ok) throw new Error('user-profile-failed')
 
   return (await response.json()) as GoogleUserProfile
+}
+
+export async function fetchGoogleCalendarEvents(accessToken: string, calendarId: string) {
+  const params = new URLSearchParams({
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '20',
+    timeMin: new Date().toISOString(),
+  })
+
+  const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (!response.ok) throw new Error('calendar-events-failed')
+
+  const data = (await response.json()) as { items?: GoogleCalendarEventItem[] }
+  return (data.items ?? []).filter((item) => item.status !== 'cancelled')
 }
 
 export async function createGoogleCalendarEvent(accessToken: string, calendarId: string, payload: CalendarEventPayload) {

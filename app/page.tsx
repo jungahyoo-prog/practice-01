@@ -13,6 +13,7 @@ type ScheduleRepeatType = 'none' | 'daily' | 'weekday' | 'weekly' | 'monthly' | 
 type DashboardTab = 'project-view' | 'schedule-list' | 'project-create' | 'schedule-create' | 'calendar'
 type ScheduleQuickFilter = 'all' | 'major' | 'high-priority' | 'today' | 'week'
 type CalendarFeedback = { tone: 'default' | 'success' | 'error'; text: string }
+type CalendarPanelTab = 'preview' | 'import'
 
 type ProjectItem = {
   id: string
@@ -345,6 +346,72 @@ function buildGoogleCalendarViewUrl(calendarId: string) {
   return `https://calendar.google.com/calendar/u/0/r/day?${new URLSearchParams({ src: calendarId, ctz: 'Asia/Seoul' }).toString()}`
 }
 
+function parseGoogleEventDate(dateValue?: string, dateTimeValue?: string) {
+  if (dateTimeValue) {
+    const parsed = new Date(dateTimeValue)
+    return {
+      date: formatLocalDateKey(parsed),
+      time: `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`,
+    }
+  }
+
+  if (dateValue) {
+    return {
+      date: dateValue,
+      time: '09:00',
+    }
+  }
+
+  return {
+    date: formatLocalDateKey(new Date()),
+    time: '09:00',
+  }
+}
+
+function normalizeImportedCalendarDescription(description?: string) {
+  if (!description) return ''
+
+  return description
+    .replace(/프로젝트:\s*[^\n]+/g, '')
+    .replace(/<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, (_, href: string, text: string) => {
+      const cleanText = text.replace(/<[^>]+>/g, '').trim()
+      return cleanText ? `${cleanText} (${href})` : href
+    })
+    .replace(/https?:\/\/[^\s<)]+/gi, (url) => url)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function renderAutoLinkedText(text: string) {
+  const urlRegex = /(https?:\/\/[^\s)]+|www\.[^\s)]+)/gi
+  const parts = text.split(urlRegex)
+
+  return parts.map((part, index) => {
+    if (!part) return null
+    const isUrl = /^(https?:\/\/|www\.)/i.test(part)
+
+    if (!isUrl) {
+      return <span key={`${part}-${index}`}>{part}</span>
+    }
+
+    const href = part.startsWith('http') ? part : `https://${part}`
+    return (
+      <a
+        key={`${part}-${index}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="underline decoration-black/30 underline-offset-2 transition hover:text-blue-900"
+      >
+        {part}
+      </a>
+    )
+  })
+}
+
 function TimelineTrack({
   startMonth,
   endMonth,
@@ -477,7 +544,8 @@ export default function Home() {
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
-  const { authorize, calendars, disconnect, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
+  const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
+  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
@@ -884,6 +952,31 @@ export default function Home() {
     setActiveTab('schedule-create')
   }
 
+  const importGoogleCalendarEvent = (event: { summary?: string; description?: string; start?: { date?: string; dateTime?: string } }) => {
+    const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
+    const matchedProject =
+      projects.find((project) => event.description?.includes(`프로젝트: ${project.name}`)) ??
+      projects.find((project) => event.summary?.includes(project.name)) ??
+      projects[0]
+
+    setEditingScheduleId(null)
+      setScheduleForm({
+        projectId: matchedProject?.id ?? '',
+        title: event.summary || '가져온 일정',
+        date,
+        time,
+      repeatType: 'none',
+        repeatCustom: '',
+        repeatCustomLabel: '',
+        priority: '보통',
+        kind: 'general',
+        memo: normalizeImportedCalendarDescription(event.description),
+        syncToGoogleCalendar: false,
+      })
+    setIsCustomRepeatMenuOpen(false)
+    setActiveTab('schedule-create')
+  }
+
   const removeProject = (projectId: string) => {
     if (typeof window !== 'undefined' && !window.confirm('정말 삭제하시겠습니까?')) return
     const remainingProjects = projects.filter((project) => project.id !== projectId)
@@ -1037,9 +1130,11 @@ export default function Home() {
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                              <Text variant="projectTitle" as="h3" color="text-fg-primary" className="pt-1">
-                                {schedule.title}
-                              </Text>
+                                <button type="button" onClick={() => editSchedule(schedule.id)} className="w-fit text-left transition hover:opacity-80">
+                                  <Text variant="projectTitle" as="h3" color="text-fg-primary" className="pt-1">
+                                    {schedule.title}
+                                  </Text>
+                                </button>
                               <div className="flex items-center gap-2">
                                 <ProjectActionIconButton label="구글 캘린더에 추가" onClick={() => void handleAddScheduleToCalendar(schedule, project?.name)}>
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1084,7 +1179,7 @@ export default function Home() {
                             </div>
                             <Text variant="detail20" color="text-fg-tertiary">{formatRepeatLabel(schedule)}</Text>
                           </div>
-                          <Text variant="detail20" color="text-fg-primary">{schedule.memo}</Text>
+                          <Text variant="detail20" color="text-fg-primary">{renderAutoLinkedText(schedule.memo)}</Text>
                         </div>
                       </Card>
                   )
@@ -1304,7 +1399,83 @@ export default function Home() {
             <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => setActiveTab('schedule-create')}>새 일정 추가하기</Button></div>
           </div>
         </Card>
-        <Card padding="none" className="overflow-hidden border-transparent bg-white shadow-m"><div className="border-b border-[var(--color-border)] px-6 py-5"><Text variant="body24" as="h2" color="text-fg-primary">선택한 구글 캘린더 보기</Text><Text variant="detail20" color="text-fg-secondary" className="mt-2">{effectiveCalendarId || '캘린더 ID를 입력하거나 구글 계정에 로그인하면 여기에 표시됩니다.'}</Text></div>{calendarEmbedUrl ? <iframe title="Google Calendar Preview" src={calendarEmbedUrl} className="h-[520px] w-full border-0" /> : <div className="px-6 py-10"><Text variant="detail20" color="text-fg-secondary">표시할 캘린더를 아직 고르지 않았습니다.</Text></div>}</Card>
+        <Card padding="none" className="overflow-hidden border-transparent bg-white shadow-m">
+          <div className="border-b border-[var(--color-border)] px-6 py-5">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Text variant="body24" as="h2" color="text-fg-primary">
+                  {activeCalendarPanelTab === 'preview' ? '선택한 구글 캘린더 보기' : '가져올 수 있는 캘린더 일정'}
+                </Text>
+                <Text variant="detail20" color="text-fg-secondary" className="mt-2">
+                  {activeCalendarPanelTab === 'preview'
+                    ? effectiveCalendarId || '캘린더 ID를 입력하거나 구글 계정에 로그인하면 여기에 표시됩니다.'
+                    : '구글 캘린더 일정은 iframe 안에서 직접 가져올 수 없어서, 아래 목록에서 `내 일정 등록`으로 불러올 수 있게 준비했습니다.'}
+                </Text>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant={activeCalendarPanelTab === 'preview' ? 'primary' : 'outlineDark'}
+                  size="sm"
+                  shape="round"
+                  className={activeCalendarPanelTab === 'preview' ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'}
+                  onClick={() => setActiveCalendarPanelTab('preview')}
+                >
+                  캘린더 보기
+                </Button>
+                <Button
+                  variant={activeCalendarPanelTab === 'import' ? 'primary' : 'outlineDark'}
+                  size="sm"
+                  shape="round"
+                  className={activeCalendarPanelTab === 'import' ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'}
+                  onClick={() => setActiveCalendarPanelTab('import')}
+                >
+                  일정 가져오기
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {activeCalendarPanelTab === 'preview' ? (
+            calendarEmbedUrl ? (
+              <iframe title="Google Calendar Preview" src={calendarEmbedUrl} className="h-[520px] w-full border-0" />
+            ) : (
+              <div className="px-6 py-10">
+                <Text variant="detail20" color="text-fg-secondary">표시할 캘린더를 아직 고르지 않았습니다.</Text>
+              </div>
+            )
+          ) : isConnected && selectedCalendarId ? (
+            <div className="px-6 py-6">
+              {isEventsLoading ? (
+                <Text variant="detail20" color="text-fg-secondary">선택한 캘린더의 일정을 불러오는 중입니다.</Text>
+              ) : events.length > 0 ? (
+                <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
+                  {events.map((event) => {
+                    const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
+                    return (
+                      <Card key={event.id} padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
+                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-2">
+                            <Text variant="projectTitle" as="h3" color="text-fg-primary">{event.summary || '제목 없는 일정'}</Text>
+                            <Text variant="detail20" color="text-fg-secondary">{formatDateLabel(date, time)}</Text>
+                          </div>
+                          <Button variant="outlineDark" size="sm" shape="round" className="whitespace-nowrap" onClick={() => importGoogleCalendarEvent(event)}>
+                            내 일정 등록
+                          </Button>
+                        </div>
+                      </Card>
+                    )
+                  })}
+                </div>
+              ) : (
+                <Text variant="detail20" color="text-fg-secondary">가져올 수 있는 일정이 아직 없습니다.</Text>
+              )}
+            </div>
+          ) : (
+            <div className="px-6 py-10">
+              <Text variant="detail20" color="text-fg-secondary">일정을 가져오려면 먼저 구글 계정을 연결하고 저장할 캘린더를 선택해 주세요.</Text>
+            </div>
+          )}
+        </Card>
       </div>
     )
   }

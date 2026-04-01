@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   createGoogleCalendarEvent,
+  fetchGoogleCalendarEvents,
   fetchGoogleCalendars,
   fetchGoogleUserProfile,
   googleCalendarScope,
   type GoogleCalendarItem,
+  type GoogleCalendarEventItem,
 } from '@/services/googleCalendar'
 
 type GoogleAuthResult =
@@ -18,10 +20,12 @@ export function useGoogleCalendar(isScriptReady: boolean) {
   const [accessToken, setAccessToken] = useState('')
   const [isAuthorizing, setIsAuthorizing] = useState(false)
   const [isCalendarsLoading, setIsCalendarsLoading] = useState(false)
+  const [isEventsLoading, setIsEventsLoading] = useState(false)
   const [isSavingEvent, setIsSavingEvent] = useState(false)
   const [googleEmail, setGoogleEmail] = useState('')
   const [authError, setAuthError] = useState('')
   const [calendars, setCalendars] = useState<GoogleCalendarItem[]>([])
+  const [events, setEvents] = useState<GoogleCalendarEventItem[]>([])
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
   const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null)
 
@@ -82,6 +86,35 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     }
   }, [accessToken])
 
+  useEffect(() => {
+    if (!accessToken || !selectedCalendarId) {
+      setEvents([])
+      return
+    }
+
+    let isMounted = true
+
+    const loadCalendarEvents = async () => {
+      setIsEventsLoading(true)
+      try {
+        const nextEvents = await fetchGoogleCalendarEvents(accessToken, selectedCalendarId)
+        if (isMounted) {
+          setEvents(nextEvents)
+        }
+      } catch {
+        if (isMounted) setAuthError('선택한 캘린더 일정을 불러오지 못했습니다.')
+      } finally {
+        if (isMounted) setIsEventsLoading(false)
+      }
+    }
+
+    void loadCalendarEvents()
+
+    return () => {
+      isMounted = false
+    }
+  }, [accessToken, selectedCalendarId])
+
   const isConnected = useMemo(() => Boolean(accessToken), [accessToken])
   const selectedCalendar = useMemo(() => calendars.find((calendar) => calendar.id === selectedCalendarId) ?? null, [calendars, selectedCalendarId])
 
@@ -139,11 +172,13 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     authorize,
     calendars,
     disconnect,
+    events,
     googleClientId,
     googleEmail,
     authError,
     isAuthorizing,
     isCalendarsLoading,
+    isEventsLoading,
     isConnected,
     isSavingEvent,
     selectedCalendar,
