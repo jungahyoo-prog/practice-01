@@ -48,14 +48,14 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com",
               "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
               "img-src 'self' data: https://cdn.music-flo.com https://cdnimg.music-flo.com https://image.music-flo.com https://img.music-flo.com",
               process.env.NEXT_PUBLIC_SUPABASE_URL
-                ? "connect-src 'self' https://cdn.jsdelivr.net https://*.supabase.co wss://*.supabase.co https://*.supabase.in wss://*.supabase.in"
-                : "connect-src 'self' https://cdn.jsdelivr.net",
+                ? "connect-src 'self' https://cdn.jsdelivr.net https://*.supabase.co wss://*.supabase.co https://*.supabase.in wss://*.supabase.in https://www.googleapis.com https://oauth2.googleapis.com"
+                : "connect-src 'self' https://cdn.jsdelivr.net https://www.googleapis.com https://oauth2.googleapis.com",
               "font-src 'self' https://cdn.jsdelivr.net",
-              "frame-src 'self' https://calendar.google.com",
+              "frame-src 'self' https://calendar.google.com https://accounts.google.com",
               "frame-ancestors 'none'",
             ].join('; '),
           },
