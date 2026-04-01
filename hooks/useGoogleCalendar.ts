@@ -9,7 +9,9 @@ import {
   type GoogleCalendarItem,
 } from '@/services/googleCalendar'
 
-type GoogleAuthResult = { success: true } | { success: false; reason: 'missing-client-id' | 'script-not-ready' | 'login-failed' }
+type GoogleAuthResult =
+  | { success: true }
+  | { success: false; reason: 'missing-client-id' | 'script-not-ready' | 'login-failed' | 'popup-closed' | 'token-missing' | 'calendar-load-failed'; detail?: string }
 
 export function useGoogleCalendar(isScriptReady: boolean) {
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
@@ -18,6 +20,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
   const [isCalendarsLoading, setIsCalendarsLoading] = useState(false)
   const [isSavingEvent, setIsSavingEvent] = useState(false)
   const [googleEmail, setGoogleEmail] = useState('')
+  const [authError, setAuthError] = useState('')
   const [calendars, setCalendars] = useState<GoogleCalendarItem[]>([])
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
   const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null)
@@ -29,10 +32,16 @@ export function useGoogleCalendar(isScriptReady: boolean) {
       client_id: googleClientId,
       scope: googleCalendarScope,
       callback: (response) => {
-        if (response.access_token) setAccessToken(response.access_token)
+        if (response.access_token) {
+          setAuthError('')
+          setAccessToken(response.access_token)
+        } else {
+          setAuthError('토큰을 받지 못했습니다.')
+        }
         setIsAuthorizing(false)
       },
-      error_callback: () => {
+      error_callback: (error) => {
+        setAuthError(error?.type === 'popup_closed' ? '로그인 창이 닫혀 연결이 완료되지 않았습니다.' : '구글 로그인 중 오류가 발생했습니다.')
         setIsAuthorizing(false)
       },
     })
@@ -59,6 +68,8 @@ export function useGoogleCalendar(isScriptReady: boolean) {
           const defaultCalendar = calendarItems.find((calendar) => calendar.primary) ?? calendarItems[0]
           setSelectedCalendarId(defaultCalendar?.id ?? '')
         }
+      } catch {
+        if (isMounted) setAuthError('로그인은 되었지만 캘린더 목록을 불러오지 못했습니다.')
       } finally {
         if (isMounted) setIsCalendarsLoading(false)
       }
@@ -78,6 +89,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     if (!googleClientId) return { success: false, reason: 'missing-client-id' }
     if (!isScriptReady || !tokenClient) return { success: false, reason: 'script-not-ready' }
 
+    setAuthError('')
     setIsAuthorizing(true)
 
     try {
@@ -98,6 +110,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     setCalendars([])
     setSelectedCalendarId('')
     setGoogleEmail('')
+    setAuthError('')
   }
 
   const addEventToCalendar = async (payload: {
@@ -128,6 +141,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     disconnect,
     googleClientId,
     googleEmail,
+    authError,
     isAuthorizing,
     isCalendarsLoading,
     isConnected,

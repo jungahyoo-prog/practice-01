@@ -11,7 +11,7 @@ interface Window {
           client_id: string
           scope: string
           callback: (response: { access_token?: string }) => void
-          error_callback?: () => void
+          error_callback?: (error?: { type?: string }) => void
         }) => google.accounts.oauth2.TokenClient
         revoke: (token: string) => void
       }

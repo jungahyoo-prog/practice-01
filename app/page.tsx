@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Script from 'next/script'
-import { ChangeEvent, useMemo, useState } from 'react'
+import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Text } from '@/components/ui/Text'
@@ -273,7 +273,7 @@ export default function Home() {
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id).date}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
-  const { authorize, calendars, disconnect, googleClientId, googleEmail, isAuthorizing, isCalendarsLoading, isConnected, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
+  const { authorize, calendars, disconnect, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
@@ -325,6 +325,18 @@ export default function Home() {
     ],
     [],
   )
+
+  useEffect(() => {
+    if (authError) {
+      setCalendarFeedback({ tone: 'error', text: authError })
+    }
+  }, [authError])
+
+  useEffect(() => {
+    if (isConnected && selectedCalendarId) {
+      setCalendarFeedback({ tone: 'success', text: '구글 계정 연결이 완료되었습니다. 이제 일정이 선택한 캘린더에 직접 저장됩니다.' })
+    }
+  }, [isConnected, selectedCalendarId])
 
   const effectiveCalendarId = isConnected ? selectedCalendarId : calendarId
   const calendarEmbedUrl = effectiveCalendarId ? buildGoogleCalendarEmbedUrl(effectiveCalendarId) : ''
