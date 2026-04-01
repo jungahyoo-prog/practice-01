@@ -360,6 +360,7 @@ export default function Home() {
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id).date}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
+  const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const { authorize, calendars, disconnect, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
@@ -390,8 +391,14 @@ export default function Home() {
     () =>
       projects.map((project) => {
         const milestones = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.kind === 'major' && schedule.date >= todayKey)
+        const remainingCount = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey).length
         const nextMilestone = milestones[0]
-        return { ...project, duration: formatProjectDuration(project.startDate, project.endDate), milestone: nextMilestone ? `${nextMilestone.title} · ${formatDateLabel(nextMilestone.date, nextMilestone.time)}` : '남아 있는 주요 일정이 없습니다.' }
+        return {
+          ...project,
+          duration: formatProjectDuration(project.startDate, project.endDate),
+          remainingCount,
+          milestone: nextMilestone ? `${nextMilestone.title} · ${formatDateLabel(nextMilestone.date, nextMilestone.time)}` : '남아 있는 주요 일정이 없습니다.',
+        }
       }),
     [projects, sortedSchedules, todayKey],
   )
@@ -480,6 +487,7 @@ export default function Home() {
 
   const applySummaryShortcut = (tab: DashboardTab, quickFilter: ScheduleQuickFilter) => {
     setActiveTab(tab)
+    setScheduleProjectShortcutId(null)
     if (tab === 'schedule-list') {
       setScheduleQuickFilter(quickFilter)
       setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '' })
@@ -488,10 +496,20 @@ export default function Home() {
     setScheduleQuickFilter('all')
   }
 
+  const applyProjectRemainingShortcut = (projectId: string) => {
+    setActiveTab('schedule-list')
+    setScheduleQuickFilter('all')
+    setScheduleProjectShortcutId(projectId)
+    setScheduleFilters({ projectId, startDate: todayKey, endDate: '', priority: '' })
+  }
+
   const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setProjectForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleChange = (field: keyof ScheduleFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleForm((current) => ({ ...current, [field]: event.target.value }))
-  const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
+  const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setScheduleProjectShortcutId(null)
+    setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
+  }
   const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setCustomRepeatConfig((current) => ({ ...current, [field]: event.target.value }))
 
@@ -651,11 +669,17 @@ export default function Home() {
                         <Text variant="detail20" color="text-fg-secondary">{project.owner}</Text>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <PriorityBadge priority={project.priority} />
-                      <div className="rounded-full bg-blue-50 px-3 py-2"><Text variant="detail20" color="text-blue-900">진행률 {project.progress}%</Text></div>
+                      <div className="flex flex-wrap gap-2">
+                        <PriorityBadge priority={project.priority} />
+                        <button
+                          type="button"
+                          onClick={() => applyProjectRemainingShortcut(project.id)}
+                          className="rounded-full bg-blue-50 px-3 py-2 transition hover:bg-blue-100"
+                        >
+                          <Text variant="detail20" color="text-blue-900">잔여 일정 {project.remainingCount}건</Text>
+                        </button>
+                      </div>
                     </div>
-                  </div>
                   <TimelineTrack startMonth={getMonthIndexFromDate(project.startDate)} endMonth={getMonthIndexFromDate(project.endDate)} />
                   <div className="rounded-[24px] bg-surface-primary p-4">
                     <Text variant="detail20" color="text-fg-tertiary">다음 주요 일정</Text>
@@ -677,12 +701,29 @@ export default function Home() {
       return (
         <Card padding="lg" className="border-transparent bg-white shadow-m">
           <div className="space-y-6">
-            {scheduleQuickFilter !== 'all' && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-blue-50 px-4 py-3">
-                <Text variant="detail20" color="text-blue-900">{scheduleQuickFilter === 'major' ? '요약 박스에서 남아 있는 주요 일정만 보도록 필터가 적용되었습니다.' : '요약 박스에서 높은 우선순위 일정만 보도록 필터가 적용되었습니다.'}</Text>
-                <Button variant="outlineDark" size="sm" shape="round" onClick={() => setScheduleQuickFilter('all')}>요약 필터 해제</Button>
-              </div>
-            )}
+              {(scheduleQuickFilter !== 'all' || scheduleProjectShortcutId) && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-blue-50 px-4 py-3">
+                  <Text variant="detail20" color="text-blue-900">
+                    {scheduleProjectShortcutId
+                      ? `${projects.find((project) => project.id === scheduleProjectShortcutId)?.name ?? '선택한 프로젝트'}의 금일 기준 잔여 일정만 보도록 필터가 적용되었습니다.`
+                      : scheduleQuickFilter === 'major'
+                        ? '요약 박스에서 남아 있는 주요 일정만 보도록 필터가 적용되었습니다.'
+                        : '요약 박스에서 높은 우선순위 일정만 보도록 필터가 적용되었습니다.'}
+                  </Text>
+                  <Button
+                    variant="outlineDark"
+                    size="sm"
+                    shape="round"
+                    onClick={() => {
+                      setScheduleQuickFilter('all')
+                      setScheduleProjectShortcutId(null)
+                      setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '' })
+                    }}
+                  >
+                    요약 필터 해제
+                  </Button>
+                </div>
+              )}
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">프로젝트별</Text><select value={scheduleFilters.projectId} onChange={handleScheduleFilterChange('projectId')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="">전체 프로젝트</option>{projectOptions.map((project) => <option key={project.value} value={project.value}>{project.label}</option>)}</select></label>
@@ -693,8 +734,19 @@ export default function Home() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-surface-primary px-4 py-3">
               <Text variant="detail20" color="text-fg-secondary">현재 조건에 맞는 일정 {filteredSchedules.length}건</Text>
-              <Button variant="outlineDark" size="sm" shape="round" onClick={() => setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '' })}>필터 초기화</Button>
-            </div>
+                <Button
+                  variant="outlineDark"
+                  size="sm"
+                  shape="round"
+                  onClick={() => {
+                    setScheduleProjectShortcutId(null)
+                    setScheduleQuickFilter('all')
+                    setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '' })
+                  }}
+                >
+                  필터 초기화
+                </Button>
+              </div>
 
             <div className="space-y-3">
               {filteredSchedules.map((schedule) => {
