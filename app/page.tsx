@@ -9,6 +9,7 @@ type ScheduleKind = 'major' | 'general'
 type PriorityLevel = '최우선' | '높음' | '보통'
 type DashboardTab = 'schedule-create' | 'schedule-list' | 'project-create' | 'project-view' | 'calendar'
 type ScheduleFilters = { projectId: string; startDate: string; endDate: string; priority: '' | PriorityLevel }
+type ScheduleQuickFilter = 'all' | 'major' | 'high-priority'
 
 type ProjectItem = { id: string; name: string; owner: string; priority: PriorityLevel; progress: number; startMonth: number; endMonth: number }
 type ScheduleItem = { id: string; projectId: string; title: string; date: string; time: string; priority: PriorityLevel; kind: ScheduleKind; memo: string }
@@ -61,6 +62,12 @@ const detailDescriptions = { major: { summary: '프로젝트 흐름에서 꼭 �
 const formatDateLabel = (date: string, time: string) => {
   const parsedDate = new Date(`${date}T00:00:00`)
   return `${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일 ${time}`
+}
+const formatLocalDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 const formatDuration = (startMonth: number, endMonth: number) => `2026.${String(startMonth + 1).padStart(2, '0')} - 2026.${String(endMonth + 1).padStart(2, '0')}`
 const buildDateTimeValue = (date: string, time: string) => `${date}T${time}`
@@ -124,6 +131,7 @@ function ScheduleTypeBadge({ kind }: { kind: ScheduleKind }) {
 }
 
 export default function Home() {
+  const todayKey = formatLocalDateKey(new Date())
   const [activeTab, setActiveTab] = useState<DashboardTab>('project-view')
   const [projects, setProjects] = useState<ProjectItem[]>(initialProjects)
   const [schedules, setSchedules] = useState<ScheduleItem[]>(initialSchedules)
@@ -133,11 +141,12 @@ export default function Home() {
   const [projectForm, setProjectForm] = useState<ProjectFormState>(defaultProjectForm())
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id))
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '' })
+  const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
-  const todaySchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date === '2026-03-31').slice(0, 3), [sortedSchedules])
-  const upcomingSchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date !== '2026-03-31').slice(0, 4), [sortedSchedules])
+  const todaySchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date === todayKey).slice(0, 3), [sortedSchedules, todayKey])
+  const upcomingSchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date > todayKey).slice(0, 4), [sortedSchedules, todayKey])
   const filteredSchedules = useMemo(
     () =>
       sortedSchedules.filter((schedule) => {
@@ -145,9 +154,16 @@ export default function Home() {
         const matchesStartDate = !scheduleFilters.startDate || schedule.date >= scheduleFilters.startDate
         const matchesEndDate = !scheduleFilters.endDate || schedule.date <= scheduleFilters.endDate
         const matchesPriority = !scheduleFilters.priority || schedule.priority === scheduleFilters.priority
-        return matchesProject && matchesStartDate && matchesEndDate && matchesPriority
+        const matchesQuickFilter =
+          scheduleQuickFilter === 'all'
+            ? true
+            : scheduleQuickFilter === 'major'
+              ? schedule.kind === 'major'
+              : schedule.priority === '최우선' || schedule.priority === '높음'
+
+        return matchesProject && matchesStartDate && matchesEndDate && matchesPriority && matchesQuickFilter
       }),
-    [scheduleFilters.endDate, scheduleFilters.priority, scheduleFilters.projectId, scheduleFilters.startDate, sortedSchedules],
+    [scheduleFilters.endDate, scheduleFilters.priority, scheduleFilters.projectId, scheduleFilters.startDate, scheduleQuickFilter, sortedSchedules],
   )
   const projectTimelineCards = useMemo(
     () =>
@@ -164,11 +180,11 @@ export default function Home() {
   )
   const summaryCards = useMemo(
     () => [
-      { label: '진행 중 프로젝트', value: `${projects.length}개`, note: '현재 작성된 프로젝트 기준' },
-      { label: '다가오는 주요 일정', value: `${schedules.filter((schedule) => schedule.kind === 'major').length}건`, note: '타임라인에 먼저 노출되는 일정' },
-      { label: '높은 우선순위 업무', value: `${schedules.filter((schedule) => schedule.priority !== '보통').length}건`, note: '최우선 또는 높음으로 분류된 일정' },
+      { label: '진행 중 프로젝트', value: `${projects.length}개`, note: '현재 작성된 프로젝트 기준', tab: 'project-view' as DashboardTab, quickFilter: 'all' as ScheduleQuickFilter },
+      { label: '남아 있는 주요 일정', value: `${schedules.filter((schedule) => schedule.kind === 'major' && schedule.date >= todayKey).length}건`, note: '오늘 이후 기준으로 남아 있는 주요 일정', tab: 'schedule-list' as DashboardTab, quickFilter: 'major' as ScheduleQuickFilter },
+      { label: '높은 우선순위 업무', value: `${schedules.filter((schedule) => schedule.priority !== '보통').length}건`, note: '최우선 또는 높음으로 분류된 일정', tab: 'schedule-list' as DashboardTab, quickFilter: 'high-priority' as ScheduleQuickFilter },
     ],
-    [projects.length, schedules],
+    [projects.length, schedules, todayKey],
   )
   const selectedDetail = detailDescriptions[scheduleForm.kind]
   const calendarEmbedUrl = buildGoogleCalendarEmbedUrl(calendarId)
@@ -258,6 +274,18 @@ export default function Home() {
 
   const openGoogleCalendar = (url: string) => {
     if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const applySummaryShortcut = (tab: DashboardTab, quickFilter: ScheduleQuickFilter) => {
+    setActiveTab(tab)
+
+    if (tab === 'schedule-list') {
+      setScheduleQuickFilter(quickFilter)
+      setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '' })
+      return
+    }
+
+    setScheduleQuickFilter('all')
   }
 
   const renderTabContent = () => {
@@ -364,6 +392,16 @@ export default function Home() {
                 <Text variant="body24" as="h2" color="text-fg-primary">일정 보기</Text>
                 <Text variant="detail20" color="text-fg-secondary">필터로 좁혀 보면서 수정하거나 구글 캘린더에 보낼 일정을 빠르게 처리할 수 있습니다.</Text>
               </div>
+              {scheduleQuickFilter !== 'all' && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-blue-50 px-4 py-3">
+                  <Text variant="detail20" color="text-blue-900">
+                    {scheduleQuickFilter === 'major' ? '요약 박스에서 주요 일정만 보도록 필터가 적용되었습니다.' : '요약 박스에서 높은 우선순위 업무만 보도록 필터가 적용되었습니다.'}
+                  </Text>
+                  <Button variant="outlineDark" size="sm" shape="round" onClick={() => setScheduleQuickFilter('all')}>
+                    요약 필터 해제
+                  </Button>
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <label className="block space-y-3">
                   <Text variant="detail20" color="text-fg-tertiary">프로젝트별</Text>
@@ -593,11 +631,28 @@ export default function Home() {
             <div className="grid gap-3 sm:grid-cols-3 xl:flex-1">
               {summaryCards.map((card) => (
                 <Card key={card.label} padding="md" className="border-transparent bg-white/90 backdrop-blur">
-                  <div className="space-y-2">
-                    <Text variant="detail20" color="text-fg-tertiary">{card.label}</Text>
-                    <Text variant="body24" as="p" color="text-fg-primary">{card.value}</Text>
-                    <Text variant="detail20" color="text-fg-secondary">{card.note}</Text>
-                  </div>
+                  <button type="button" className="w-full text-left" onClick={() => applySummaryShortcut(card.tab, card.quickFilter)}>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <Text variant="detail20" color="text-fg-tertiary">{card.label}</Text>
+                        <div className="group relative shrink-0" onClick={(event) => event.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[12px] font-[700] text-fg-tertiary"
+                            aria-label={`${card.label} 설명 보기`}
+                          >
+                            ?
+                          </button>
+                          <div className="pointer-events-none absolute right-0 top-8 z-20 hidden w-[220px] rounded-[20px] bg-gray-800 px-4 py-3 text-left shadow-l group-hover:block group-focus-within:block">
+                            <Text variant="detail20" color="text-alpha-white-700">
+                              {card.note}
+                            </Text>
+                          </div>
+                        </div>
+                      </div>
+                      <Text variant="body24" as="p" color="text-fg-primary">{card.value}</Text>
+                    </div>
+                  </button>
                 </Card>
               ))}
             </div>
