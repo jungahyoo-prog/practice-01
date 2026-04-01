@@ -672,6 +672,34 @@ export default function Home() {
     setCalendarFeedback({ tone: 'default', text: '로그인 연동이 없어 브라우저의 기본 캘린더 추가 화면으로 열었습니다.' })
   }
 
+  const saveScheduleToConnectedCalendar = async (schedule: ScheduleItem, projectName?: string) => {
+    const resolvedRepeatCustom =
+      schedule.repeatType === 'custom' && !schedule.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, schedule.date) : schedule.repeatCustom
+
+    if (!isConnected || !selectedCalendarId) {
+      setCalendarFeedback({ tone: 'error', text: '구글 캘린더에도 등록하려면 먼저 구글 계정을 연결하고 저장할 캘린더를 선택해 주세요.' })
+      return false
+    }
+
+    try {
+      await addEventToCalendar({
+        calendarId: selectedCalendarId,
+        title: schedule.title,
+        date: schedule.date,
+        time: schedule.time,
+        repeatType: schedule.repeatType,
+        repeatCustom: resolvedRepeatCustom,
+        memo: schedule.memo,
+        projectName,
+      })
+      setCalendarFeedback({ tone: 'success', text: `선택한 캘린더${selectedCalendar?.summary ? `(${selectedCalendar.summary})` : ''}에 일정이 저장되었습니다.` })
+      return true
+    } catch {
+      setCalendarFeedback({ tone: 'error', text: '구글 캘린더 저장에 실패했습니다. 로그인 상태나 권한을 다시 확인해 주세요.' })
+      return false
+    }
+  }
+
   const applySummaryShortcut = (tab: DashboardTab, quickFilter: ScheduleQuickFilter, filters: ScheduleFilters) => {
     setActiveTab(tab)
     setScheduleProjectShortcutId(null)
@@ -821,7 +849,7 @@ export default function Home() {
     setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? nextSchedule : schedule)) : [...current, nextSchedule]))
 
     if (scheduleForm.syncToGoogleCalendar) {
-      await handleAddScheduleToCalendar(nextSchedule, projects.find((project) => project.id === nextSchedule.projectId)?.name)
+      await saveScheduleToConnectedCalendar(nextSchedule, projects.find((project) => project.id === nextSchedule.projectId)?.name)
     }
 
     setActiveTab('schedule-list')
