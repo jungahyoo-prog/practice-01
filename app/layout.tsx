@@ -1,8 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
-import { WebviewProvider } from '@/components/WebviewProvider'
-import { MixpanelProvider } from '@/components/MixpanelProvider'
-import { CloseButton } from '@/components/ui/CloseButton'
 
 export const metadata: Metadata = {
   title: 'Next.js App',
@@ -31,10 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-pretendard antialiased">
-        <WebviewProvider />
-        <MixpanelProvider />
         {children}
-        <CloseButton />
       </body>
     </html>
   )

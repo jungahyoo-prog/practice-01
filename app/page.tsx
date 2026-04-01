@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/Text'
 type ScheduleKind = 'major' | 'general'
 type PriorityLevel = '최우선' | '높음' | '보통'
 type DashboardTab = 'schedule-create' | 'schedule-list' | 'project-create' | 'project-view' | 'calendar'
+type ScheduleFilters = { projectId: string; startDate: string; endDate: string; priority: '' | PriorityLevel }
 
 type ProjectItem = { id: string; name: string; owner: string; priority: PriorityLevel; progress: number; startMonth: number; endMonth: number }
 type ScheduleItem = { id: string; projectId: string; title: string; date: string; time: string; priority: PriorityLevel; kind: ScheduleKind; memo: string }
@@ -16,10 +17,10 @@ type ScheduleFormState = { projectId: string; title: string; date: string; time:
 
 const timelineMonths = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
 const tabs: { key: DashboardTab; label: string }[] = [
-  { key: 'schedule-create', label: '일정 작성' },
-  { key: 'schedule-list', label: '작성된 일정' },
-  { key: 'project-create', label: '프로젝트 작성' },
   { key: 'project-view', label: '프로젝트 보기' },
+  { key: 'schedule-list', label: '일정 보기' },
+  { key: 'project-create', label: '프로젝트 작성' },
+  { key: 'schedule-create', label: '일정 작성' },
   { key: 'calendar', label: '구글 캘린더' },
 ]
 
@@ -70,7 +71,14 @@ function buildGoogleCalendarEventUrl(schedule: ScheduleItem, projectName?: strin
   const endDateTime = new Date(`${schedule.date}T${schedule.time}:00`)
   endDateTime.setHours(endDateTime.getHours() + 1)
   const end = `${endDateTime.getFullYear()}${String(endDateTime.getMonth() + 1).padStart(2, '0')}${String(endDateTime.getDate()).padStart(2, '0')}T${String(endDateTime.getHours()).padStart(2, '0')}${String(endDateTime.getMinutes()).padStart(2, '0')}00`
-  const params = new URLSearchParams({ text: schedule.title, dates: `${start}/${end}`, details: schedule.memo, location: projectName ?? '업무 스케줄 관리 서비스', ctz: 'Asia/Seoul' })
+  const description = [projectName ? `프로젝트: ${projectName}` : '', schedule.memo].filter(Boolean).join('\n')
+  const params = new URLSearchParams({
+    text: schedule.title,
+    dates: `${start}/${end}`,
+    details: description,
+    location: '',
+    ctz: 'Asia/Seoul',
+  })
   return `https://calendar.google.com/calendar/u/0/r/eventedit?${params.toString()}`
 }
 
@@ -116,7 +124,7 @@ function ScheduleTypeBadge({ kind }: { kind: ScheduleKind }) {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('schedule-create')
+  const [activeTab, setActiveTab] = useState<DashboardTab>('project-view')
   const [projects, setProjects] = useState<ProjectItem[]>(initialProjects)
   const [schedules, setSchedules] = useState<ScheduleItem[]>(initialSchedules)
   const [calendarId, setCalendarId] = useState('jungah.yoo@dreamus.io')
@@ -124,11 +132,23 @@ export default function Home() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<ProjectFormState>(defaultProjectForm())
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id))
+  const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '' })
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
   const todaySchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date === '2026-03-31').slice(0, 3), [sortedSchedules])
   const upcomingSchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date !== '2026-03-31').slice(0, 4), [sortedSchedules])
+  const filteredSchedules = useMemo(
+    () =>
+      sortedSchedules.filter((schedule) => {
+        const matchesProject = !scheduleFilters.projectId || schedule.projectId === scheduleFilters.projectId
+        const matchesStartDate = !scheduleFilters.startDate || schedule.date >= scheduleFilters.startDate
+        const matchesEndDate = !scheduleFilters.endDate || schedule.date <= scheduleFilters.endDate
+        const matchesPriority = !scheduleFilters.priority || schedule.priority === scheduleFilters.priority
+        return matchesProject && matchesStartDate && matchesEndDate && matchesPriority
+      }),
+    [scheduleFilters.endDate, scheduleFilters.priority, scheduleFilters.projectId, scheduleFilters.startDate, sortedSchedules],
+  )
   const projectTimelineCards = useMemo(
     () =>
       projects.map((project) => {
@@ -158,6 +178,8 @@ export default function Home() {
     setProjectForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleChange = (field: keyof ScheduleFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setScheduleForm((current) => ({ ...current, [field]: event.target.value }))
+  const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
 
   const resetProjectForm = () => {
     setEditingProjectId(null)
@@ -336,39 +358,51 @@ export default function Home() {
     if (activeTab === 'schedule-list') {
       return (
         <div className="space-y-6">
-          <Card padding="lg" className="border-transparent bg-gray-800 shadow-m">
-            <div className="space-y-4">
-              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                <div className="space-y-2">
-                  <Text variant="body24" as="h2" color="text-fg-inverse">작성된 일정</Text>
-                  <Text variant="detail20" color="text-alpha-white-700">저장된 일정과 오늘 바로 챙길 일정을 한 번에 확인합니다.</Text>
-                </div>
-                <Text variant="detail20" color="text-alpha-white-700">총 {sortedSchedules.length}개 일정</Text>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                {todaySchedules.map((schedule) => (
-                  <div key={schedule.id} className={`rounded-[24px] border p-4 backdrop-blur ${priorityAccent[schedule.priority]}`}>
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        <ScheduleTypeBadge kind={schedule.kind} />
-                        <PriorityBadge priority={schedule.priority} />
-                      </div>
-                      <Text variant="body24" color="text-fg-inverse">{schedule.title}</Text>
-                      <Text variant="detail20" color="text-alpha-white-700">{formatDateLabel(schedule.date, schedule.time)}</Text>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
           <Card padding="lg" className="border-transparent bg-white shadow-m">
             <div className="space-y-5">
               <div className="space-y-2">
-                <Text variant="body24" as="h3" color="text-fg-primary">일정 목록</Text>
-                <Text variant="detail20" color="text-fg-secondary">수정하거나 구글 캘린더에 보낼 일정만 빠르게 골라서 처리할 수 있습니다.</Text>
+                <Text variant="body24" as="h2" color="text-fg-primary">일정 보기</Text>
+                <Text variant="detail20" color="text-fg-secondary">필터로 좁혀 보면서 수정하거나 구글 캘린더에 보낼 일정을 빠르게 처리할 수 있습니다.</Text>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <label className="block space-y-3">
+                  <Text variant="detail20" color="text-fg-tertiary">프로젝트별</Text>
+                  <select value={scheduleFilters.projectId} onChange={handleScheduleFilterChange('projectId')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                    <option value="">전체 프로젝트</option>
+                    {projectOptions.map((project) => <option key={project.value} value={project.value}>{project.label}</option>)}
+                  </select>
+                </label>
+                <label className="block space-y-3">
+                  <Text variant="detail20" color="text-fg-tertiary">시작일</Text>
+                  <input type="date" value={scheduleFilters.startDate} onChange={handleScheduleFilterChange('startDate')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" />
+                </label>
+                <label className="block space-y-3">
+                  <Text variant="detail20" color="text-fg-tertiary">종료일</Text>
+                  <input type="date" value={scheduleFilters.endDate} onChange={handleScheduleFilterChange('endDate')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" />
+                </label>
+                <label className="block space-y-3 md:col-span-2 xl:col-span-1">
+                  <Text variant="detail20" color="text-fg-tertiary">중요도별</Text>
+                  <select value={scheduleFilters.priority} onChange={handleScheduleFilterChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                    <option value="">전체 중요도</option>
+                    {priorityCards.map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-surface-primary px-4 py-3">
+                <Text variant="detail20" color="text-fg-secondary">
+                  현재 조건에 맞는 일정 {filteredSchedules.length}건
+                </Text>
+                <Button
+                  variant="outlineDark"
+                  size="sm"
+                  shape="round"
+                  onClick={() => setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '' })}
+                >
+                  필터 초기화
+                </Button>
               </div>
               <div className="space-y-3">
-                {sortedSchedules.map((schedule) => {
+                {filteredSchedules.map((schedule) => {
                   const project = projects.find((item) => item.id === schedule.projectId)
                   return (
                     <Card key={schedule.id} padding="md" className={`border ${priorityAccent[schedule.priority]} shadow-s`}>
@@ -394,6 +428,13 @@ export default function Home() {
                     </Card>
                   )
                 })}
+                {filteredSchedules.length === 0 && (
+                  <Card padding="md" className="border-[var(--color-border)] bg-surface shadow-s">
+                    <Text variant="detail20" color="text-fg-secondary">
+                      선택한 조건에 맞는 일정이 없습니다.
+                    </Text>
+                  </Card>
+                )}
               </div>
             </div>
           </Card>
