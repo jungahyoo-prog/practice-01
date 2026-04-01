@@ -58,6 +58,7 @@ type ScheduleFormState = {
   priority: PriorityLevel
   kind: ScheduleKind
   memo: string
+  syncToGoogleCalendar: boolean
 }
 
 type ScheduleFilters = {
@@ -136,6 +137,7 @@ const defaultScheduleForm = (projectId: string): ScheduleFormState => ({
   priority: '보통',
   kind: 'general',
   memo: '',
+  syncToGoogleCalendar: false,
 })
 
 function formatLocalDateKey(date: Date) {
@@ -438,7 +440,7 @@ export default function Home() {
     resetProjectForm()
   }
 
-  const saveSchedule = () => {
+  const saveSchedule = async () => {
     const resolvedRepeatCustom = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustom
     const resolvedRepeatCustomLabel = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustomLabel
 
@@ -455,7 +457,13 @@ export default function Home() {
       kind: scheduleForm.kind,
       memo: scheduleForm.memo || '메모 없음',
     }
+
     setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? nextSchedule : schedule)) : [...current, nextSchedule]))
+
+    if (scheduleForm.syncToGoogleCalendar) {
+      await handleAddScheduleToCalendar(nextSchedule, projects.find((project) => project.id === nextSchedule.projectId)?.name)
+    }
+
     setActiveTab('schedule-list')
     resetScheduleForm(scheduleForm.projectId)
   }
@@ -483,6 +491,7 @@ export default function Home() {
       priority: target.priority,
       kind: target.kind,
       memo: target.memo,
+      syncToGoogleCalendar: false,
     })
     setActiveTab('schedule-create')
   }
@@ -689,38 +698,14 @@ export default function Home() {
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 구분</Text><select value={scheduleForm.kind} onChange={handleScheduleChange('kind')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="major">주요 일정</option><option value="general">일반 일정</option></select></label>
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">우선순위</Text><select value={scheduleForm.priority} onChange={handleScheduleChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select></label>
             </div>
-            <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
-            <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  variant="outlineDark"
-                  size="sm"
-                  shape="round"
-                  loading={isSavingEvent}
-                  onClick={() =>
-                    void handleAddScheduleToCalendar(
-                      {
-                        id: editingScheduleId ?? 'draft-schedule',
-                        projectId: scheduleForm.projectId,
-                        title: scheduleForm.title || '새 일정',
-                        date: scheduleForm.date,
-                        time: scheduleForm.time,
-                        repeatType: scheduleForm.repeatType,
-                        repeatCustom: scheduleForm.repeatCustom,
-                        repeatCustomLabel: scheduleForm.repeatCustomLabel,
-                        priority: scheduleForm.priority,
-                        kind: scheduleForm.kind,
-                        memo: scheduleForm.memo || '메모 없음',
-                      },
-                      projects.find((project) => project.id === scheduleForm.projectId)?.name,
-                    )
-                  }
-                >
-                  구글 캘린더 등록하기
-                </Button>
-              </div>
-            </Card>
-            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" onClick={saveSchedule}>{editingScheduleId ? '일정 수정 완료' : '일정 저장'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => resetScheduleForm(scheduleForm.projectId)}>입력 초기화</Button></div>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
+              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
+              <label className="flex items-center gap-3 px-1 py-1">
+                <input type="checkbox" checked={scheduleForm.syncToGoogleCalendar} onChange={(event) => setScheduleForm((current) => ({ ...current, syncToGoogleCalendar: event.target.checked }))} className="h-4 w-4 rounded border-[var(--color-border)]" />
+                <Text variant="detail20" color="text-fg-primary">구글 캘린더에도 등록</Text>
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" loading={isSavingEvent} onClick={() => void saveSchedule()}>{editingScheduleId ? '일정 수정 완료' : '일정 저장'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => resetScheduleForm(scheduleForm.projectId)}>입력 초기화</Button></div>
           </div>
         </Card>
       )
@@ -758,7 +743,18 @@ export default function Home() {
     <main className="min-h-screen bg-surface">
       <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={() => setIsGoogleScriptReady(true)} />
       <div className="mx-auto flex min-h-screen w-full max-w-[1120px] flex-col gap-6 px-5 py-6 md:px-8 md:py-8">
-        <div className="px-1"><Text variant="dashboardLabel" color="text-black">업무 대시보드</Text></div>
+        <div className="flex items-center justify-between gap-4 px-1">
+          <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
+          {isConnected ? (
+            <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => setActiveTab('calendar')}>
+              <Text variant="detail20" color="text-fg-primary">{googleEmail || '연결된 구글 계정'}</Text>
+            </button>
+          ) : (
+            <Button variant="outlineDark" size="sm" shape="round" loading={isAuthorizing} onClick={() => { setActiveTab('calendar'); void connectGoogleCalendar() }}>
+              로그인
+            </Button>
+          )}
+        </div>
         <section className="overflow-hidden rounded-[32px] bg-gradient-to-r from-blue-50 via-white to-teal-300/20 p-5 shadow-l md:p-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="grid gap-3 sm:grid-cols-3 xl:flex-1">
