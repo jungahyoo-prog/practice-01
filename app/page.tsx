@@ -142,12 +142,6 @@ const priorityAccent: Record<PriorityLevel, string> = {
   보통: 'border-blue-50 bg-blue-50/50',
 }
 
-const scheduleCardTone: Record<PriorityLevel, string> = {
-  최우선: 'bg-red-50/70',
-  높음: 'bg-amber-50/75',
-  보통: 'bg-slate-50',
-}
-
 const scheduleKindTone: Record<ScheduleKind, string> = {
   major: 'bg-blue-50 text-blue-900',
   general: 'bg-surface-primary text-fg-secondary',
@@ -177,10 +171,10 @@ const defaultProjectForm = (): ProjectFormState => ({
   periodPreset: 'half-1',
 })
 
-const defaultScheduleForm = (projectId: string): ScheduleFormState => ({
+const defaultScheduleForm = (projectId: string, baseDate = formatLocalDateKey(new Date())): ScheduleFormState => ({
   projectId,
   title: '',
-  date: '2026-04-01',
+  date: baseDate,
   time: '09:00',
   repeatType: 'none',
   repeatCustom: '',
@@ -458,6 +452,12 @@ function CompactScheduleBadge({ className, label }: { className: string; label: 
   )
 }
 
+function getScheduleCardTone(priority: PriorityLevel) {
+  if (priority === '최우선') return '!bg-red-50'
+  if (priority === '높음') return '!bg-amber-50'
+  return '!bg-slate-50'
+}
+
 function ProjectMetaBadge({ className, label, onClick }: { className: string; label: string; onClick?: () => void }) {
   const content = (
     <div className={`rounded-full border px-2.5 py-1 ${className}`}>
@@ -507,7 +507,7 @@ function FieldHelpButton({
   onToggle: () => void
 }) {
   return (
-    <div className="relative shrink-0">
+    <div className="relative mr-4 shrink-0">
       <button
         type="button"
         onClick={onToggle}
@@ -537,9 +537,9 @@ export default function Home() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<ProjectFormState>(defaultProjectForm())
   const [isProjectPeriodMenuOpen, setIsProjectPeriodMenuOpen] = useState(false)
-  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id))
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id, todayKey))
   const [isCustomRepeatMenuOpen, setIsCustomRepeatMenuOpen] = useState(false)
-  const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id).date}T00:00:00`).getDay())] })
+  const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id, todayKey).date}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
@@ -577,24 +577,26 @@ export default function Home() {
   const getProjectPresetButtonClass = (isActive: boolean) =>
     [
       'h-[30px] px-[14px] py-0 text-[11px] leading-[16px] tracking-[0px] border rounded-full',
-      isActive ? 'border-black bg-black text-white hover:bg-black active:bg-black' : 'border-black/35 bg-white text-black hover:bg-black/5 active:bg-black/10',
+      isActive ? '!border-black !bg-black !text-white hover:!bg-black active:!bg-black' : 'border-black/35 bg-white text-black hover:bg-black/5 active:bg-black/10',
     ].join(' ')
 
   const projectTimelineCards = useMemo(
     () =>
-      projects.map((project) => {
-        const upcomingProjectSchedules = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey)
-        const milestones = upcomingProjectSchedules.filter((schedule) => schedule.kind === 'major')
-        const remainingCount = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey).length
-        const nextSchedules = upcomingProjectSchedules.slice(0, 2)
-        return {
-          ...project,
-          duration: formatProjectDuration(project.startDate, project.endDate),
-          remainingCount,
-          nextSchedules,
-          milestone: milestones[0] ? `${milestones[0].title} · ${formatDateLabel(milestones[0].date, milestones[0].time)}` : '남아 있는 주요 일정이 없습니다.',
-        }
-      }),
+        projects.map((project) => {
+          const upcomingProjectSchedules = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey)
+          const milestones = upcomingProjectSchedules.filter((schedule) => schedule.kind === 'major')
+          const remainingCount = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey).length
+          const nextSchedules = upcomingProjectSchedules.slice(0, 2)
+          const hiddenNextScheduleCount = Math.max(upcomingProjectSchedules.length - nextSchedules.length, 0)
+          return {
+            ...project,
+            duration: formatProjectDuration(project.startDate, project.endDate),
+            remainingCount,
+            nextSchedules,
+            hiddenNextScheduleCount,
+            milestone: milestones[0] ? `${milestones[0].title} · ${formatDateLabel(milestones[0].date, milestones[0].time)}` : '남아 있는 주요 일정이 없습니다.',
+          }
+        }),
     [projects, sortedSchedules, todayKey],
   )
 
@@ -818,7 +820,7 @@ export default function Home() {
     setEditingScheduleId(null)
     setActiveFieldHelp(null)
     setProjectForm(defaultProjectForm())
-    setScheduleForm(defaultScheduleForm(projects[0]?.id ?? ''))
+    setScheduleForm(defaultScheduleForm(projects[0]?.id ?? '', todayKey))
     setIsProjectPeriodMenuOpen(false)
     setIsCustomRepeatMenuOpen(false)
   }
@@ -873,7 +875,7 @@ export default function Home() {
 
   const resetScheduleForm = (projectId?: string) => {
     setEditingScheduleId(null)
-    setScheduleForm(defaultScheduleForm(projectId ?? projects[0]?.id ?? ''))
+    setScheduleForm(defaultScheduleForm(projectId ?? projects[0]?.id ?? '', todayKey))
     setIsCustomRepeatMenuOpen(false)
   }
 
@@ -1044,10 +1046,16 @@ export default function Home() {
                       onMonthClick={(monthIndex) => applyProjectMonthShortcut(project.id, monthIndex)}
                     />
                     <div className="space-y-3">
-                      <Text variant="detail20" color="text-fg-tertiary">다음 일정</Text>
-                      {project.nextSchedules.length > 0 ? (
-                          <div className="grid gap-3 xl:grid-cols-2">
-                            {project.nextSchedules.map((schedule) => (
+                        <Text variant="detail20" color="text-fg-tertiary">다음 일정</Text>
+                        {project.nextSchedules.length > 0 ? (
+                            <div
+                                className={`grid gap-3 ${
+                                project.hiddenNextScheduleCount > 0
+                                  ? 'xl:grid-cols-[minmax(0,0.95fr)_minmax(0,0.95fr)_44px]'
+                                  : 'xl:grid-cols-2'
+                              }`}
+                            >
+                              {project.nextSchedules.map((schedule) => (
                                 <div key={schedule.id} className="rounded-[24px] bg-[linear-gradient(135deg,_rgba(248,250,252,0.98)_0%,_rgba(243,246,249,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex flex-wrap items-center gap-2">
@@ -1075,12 +1083,37 @@ export default function Home() {
                                     </ProjectActionIconButton>
                                   </div>
                                 </div>
-                                <Text variant="detail20" color="text-fg-primary" className="mt-3">{schedule.title}</Text>
-                                <Text variant="detail20" color="text-fg-secondary" className="mt-1">{formatDateLabel(schedule.date, schedule.time)}</Text>
-                              </div>
-                            ))}
-                        </div>
-                      ) : (
+                                  <Text variant="detail20" color="text-fg-primary" className="mt-3">{schedule.title}</Text>
+                                  <Text variant="detail20" color="text-fg-secondary" className="mt-1">{formatDateLabel(schedule.date, schedule.time)}</Text>
+                                </div>
+                              ))}
+                              {project.hiddenNextScheduleCount > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => applyProjectRemainingShortcut(project.id)}
+                                  className="group flex min-h-[88px] w-full items-center justify-end transition hover:opacity-80 xl:min-h-[132px]"
+                                  aria-label={`${project.name}의 남은 일정 보기`}
+                                >
+                                  <svg
+                                    width="22"
+                                    height="88"
+                                    viewBox="0 0 22 88"
+                                    fill="none"
+                                    className="text-fg-tertiary opacity-40 transition group-hover:text-fg-secondary group-hover:opacity-60 xl:h-[132px] xl:w-[26px]"
+                                    aria-hidden="true"
+                                  >
+                                    <path
+                                      d="M4 8L18 44L4 80"
+                                      stroke="currentColor"
+                                      strokeWidth="1.6"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
+                          </div>
+                        ) : (
                         <div className="rounded-[24px] bg-surface-primary p-4">
                           <Text variant="detail20" color="text-fg-primary">남아 있는 일정이 없습니다.</Text>
                         </div>
@@ -1126,7 +1159,7 @@ export default function Home() {
                 {filteredSchedules.map((schedule) => {
                   const project = projects.find((item) => item.id === schedule.projectId)
                   return (
-                    <Card key={schedule.id} padding="md" className={`border-transparent ${scheduleCardTone[schedule.priority]} shadow-s`}>
+                    <Card key={schedule.id} padding="md" className={`border-transparent ${getScheduleCardTone(schedule.priority)} shadow-s`}>
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
@@ -1174,7 +1207,7 @@ export default function Home() {
                                   className={schedule.kind === 'major' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-gray-200 bg-white text-fg-tertiary'}
                                   label={schedule.kind === 'major' ? '주요 일정' : '일반 일정'}
                                 />
-                                <CompactScheduleBadge className={schedule.priority === '최우선' ? 'border-red-300 bg-red-300/15 text-red-900' : schedule.priority === '높음' ? 'border-amber-300 bg-amber-300/15 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'} label={schedule.priority} />
+                                <CompactScheduleBadge className={schedule.priority === '최우선' ? 'border-red-300 bg-red-300/15 text-red-900' : schedule.priority === '높음' ? 'border-amber-500 bg-amber-300/15 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'} label={schedule.priority} />
                               </div>
                             </div>
                             <Text variant="detail20" color="text-fg-tertiary">{formatRepeatLabel(schedule)}</Text>
@@ -1362,13 +1395,16 @@ export default function Home() {
                   <select value={scheduleForm.priority} onChange={handleScheduleChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select>
                 </label>
               </div>
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
-              <label className="flex items-center gap-3 px-1 py-1">
-                <input type="checkbox" checked={scheduleForm.syncToGoogleCalendar} onChange={(event) => setScheduleForm((current) => ({ ...current, syncToGoogleCalendar: event.target.checked }))} className="h-4 w-4 rounded border-[var(--color-border)]" />
-                <Text variant="detail20" color="text-fg-primary">구글 캘린더에도 등록</Text>
-              </label>
-            </div>
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_224px] md:items-start">
+                <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">메모</Text><input value={scheduleForm.memo} onChange={handleScheduleChange('memo')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="회의 목적이나 체크포인트를 적어 주세요" /></label>
+                <div className="space-y-3">
+                  <Text variant="detail20" color="text-fg-tertiary" className="opacity-0">구글 캘린더 등록</Text>
+                  <label className="flex h-[52px] w-full items-center justify-end gap-3 pr-5">
+                    <input type="checkbox" checked={scheduleForm.syncToGoogleCalendar} onChange={(event) => setScheduleForm((current) => ({ ...current, syncToGoogleCalendar: event.target.checked }))} className="h-4 w-4 rounded border-[var(--color-border)]" />
+                    <Text variant="detail20" color="text-fg-primary">구글 캘린더에도 등록</Text>
+                  </label>
+                </div>
+              </div>
             <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" loading={isSavingEvent} onClick={() => void saveSchedule()}>{editingScheduleId ? '일정 수정 완료' : '일정 저장'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => resetScheduleForm(scheduleForm.projectId)}>입력 초기화</Button></div>
           </div>
         </Card>
