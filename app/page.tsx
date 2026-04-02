@@ -14,6 +14,7 @@ type DashboardTab = 'project-view' | 'schedule-list' | 'project-create' | 'sched
 type ScheduleQuickFilter = 'all' | 'major' | 'high-priority' | 'today' | 'week'
 type CalendarFeedback = { tone: 'default' | 'success' | 'error'; text: string }
 type CalendarPanelTab = 'preview' | 'import'
+type ProjectStatus = 'in-progress' | 'completed' | 'upcoming'
 
 type ProjectItem = {
   id: string
@@ -68,6 +69,14 @@ type ScheduleFilters = {
   endDate: string
   priority: '' | PriorityLevel
   kind: '' | ScheduleKind
+}
+
+type ProjectViewFilters = {
+  startDateSort: '' | 'asc' | 'desc'
+  endDateSort: '' | 'asc' | 'desc'
+  priorityMode: '' | 'high-first' | 'low-first' | 'only-top' | 'only-high' | 'only-normal'
+  durationSort: '' | 'long' | 'short'
+  status: '' | ProjectStatus
 }
 
 type CustomRepeatFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
@@ -128,6 +137,9 @@ const tabs: { key: DashboardTab; label: string }[] = [
   { key: 'calendar', label: '구글 캘린더' },
 ]
 
+const tabContentInsetClassName = 'space-y-6'
+const tabContentLeadSpacerClassName = 'h-0.5'
+
 const timelineMonths = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
 
 const priorityTone: Record<PriorityLevel, string> = {
@@ -145,6 +157,18 @@ const priorityAccent: Record<PriorityLevel, string> = {
 const scheduleKindTone: Record<ScheduleKind, string> = {
   major: 'bg-blue-50 text-blue-900',
   general: 'bg-surface-primary text-fg-secondary',
+}
+
+const projectStatusTone: Record<ProjectStatus, string> = {
+  'in-progress': 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  completed: 'border-gray-200 bg-gray-50 text-fg-tertiary',
+  upcoming: 'border-violet-200 bg-violet-50 text-violet-900',
+}
+
+const projectStatusLabel: Record<ProjectStatus, string> = {
+  'in-progress': '진행 중',
+  completed: '완료',
+  upcoming: '진행 전',
 }
 
 const initialProjects: ProjectItem[] = [
@@ -468,6 +492,38 @@ function getScheduleCardTone(priority: PriorityLevel) {
   return '!bg-slate-50'
 }
 
+function getPriorityRank(priority: PriorityLevel) {
+  if (priority === '최우선') return 3
+  if (priority === '높음') return 2
+  return 1
+}
+
+function getProjectDurationDays(startDate: string, endDate: string) {
+  const start = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
+  const diff = end.getTime() - start.getTime()
+  return Math.max(Math.floor(diff / (1000 * 60 * 60 * 24)) + 1, 1)
+}
+
+function getDaysDiff(fromDate: string, toDate: string) {
+  const start = new Date(`${fromDate}T00:00:00`)
+  const end = new Date(`${toDate}T00:00:00`)
+  return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function getProjectStatusInfo(project: Pick<ProjectItem, 'startDate' | 'endDate'>, todayKey: string) {
+  if (todayKey < project.startDate) {
+    const daysUntilStart = getDaysDiff(todayKey, project.startDate)
+    return { status: 'upcoming' as ProjectStatus, daysUntilStart }
+  }
+
+  if (todayKey > project.endDate) {
+    return { status: 'completed' as ProjectStatus, daysUntilStart: null }
+  }
+
+  return { status: 'in-progress' as ProjectStatus, daysUntilStart: null }
+}
+
 function ProjectMetaBadge({ className, label, onClick }: { className: string; label: string; onClick?: () => void }) {
   const content = (
     <div className={`rounded-full border px-2.5 py-1 ${className}`}>
@@ -551,6 +607,7 @@ export default function Home() {
   const [isCustomRepeatMenuOpen, setIsCustomRepeatMenuOpen] = useState(false)
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id, todayKey).date}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
+  const [projectViewFilters, setProjectViewFilters] = useState<ProjectViewFilters>({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
@@ -591,25 +648,89 @@ export default function Home() {
       isActive ? '!border-black !bg-black !text-white hover:!bg-black active:!bg-black' : 'border-black/35 bg-white text-black hover:bg-black/5 active:bg-black/10',
     ].join(' ')
 
-  const projectTimelineCards = useMemo(
-    () =>
-        projects.map((project) => {
-          const upcomingProjectSchedules = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey)
-          const milestones = upcomingProjectSchedules.filter((schedule) => schedule.kind === 'major')
-          const remainingCount = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey).length
-          const nextSchedules = upcomingProjectSchedules.slice(0, 2)
-          const hiddenNextScheduleCount = Math.max(upcomingProjectSchedules.length - nextSchedules.length, 0)
-          return {
-            ...project,
-            duration: formatProjectDuration(project.startDate, project.endDate),
-            remainingCount,
-            nextSchedules,
-            hiddenNextScheduleCount,
-            milestone: milestones[0] ? `${milestones[0].title} · ${formatDateLabel(milestones[0].date, milestones[0].time)}` : '남아 있는 주요 일정이 없습니다.',
-          }
-        }),
-    [projects, sortedSchedules, todayKey],
-  )
+  const projectTimelineCards = useMemo(() => {
+    const filteredProjects = projects.filter((project) => {
+      const statusInfo = getProjectStatusInfo(project, todayKey)
+
+      if (projectViewFilters.status && statusInfo.status !== projectViewFilters.status) {
+        return false
+      }
+
+      if (projectViewFilters.priorityMode === 'only-top' && project.priority !== '최우선') return false
+      if (projectViewFilters.priorityMode === 'only-high' && project.priority !== '높음') return false
+      if (projectViewFilters.priorityMode === 'only-normal' && project.priority !== '보통') return false
+
+      return true
+    })
+
+    const sortedProjects = [...filteredProjects].sort((left, right) => {
+      const comparators: number[] = []
+      const leftStatus = getProjectStatusInfo(left, todayKey).status
+      const rightStatus = getProjectStatusInfo(right, todayKey).status
+      const hasExplicitDateSort = Boolean(projectViewFilters.startDateSort || projectViewFilters.endDateSort)
+      const isCompletedOnlyView = projectViewFilters.status === 'completed'
+
+      if (!hasExplicitDateSort && !isCompletedOnlyView) {
+        comparators.push((leftStatus === 'completed' ? 1 : 0) - (rightStatus === 'completed' ? 1 : 0))
+      }
+
+      if (projectViewFilters.startDateSort) {
+        comparators.push(
+          projectViewFilters.startDateSort === 'asc'
+            ? left.startDate.localeCompare(right.startDate)
+            : right.startDate.localeCompare(left.startDate),
+        )
+      }
+
+      if (projectViewFilters.endDateSort) {
+        comparators.push(
+          projectViewFilters.endDateSort === 'asc'
+            ? left.endDate.localeCompare(right.endDate)
+            : right.endDate.localeCompare(left.endDate),
+        )
+      }
+
+      if (projectViewFilters.priorityMode === 'high-first' || projectViewFilters.priorityMode === 'low-first') {
+        comparators.push(
+          projectViewFilters.priorityMode === 'high-first'
+            ? getPriorityRank(right.priority) - getPriorityRank(left.priority)
+            : getPriorityRank(left.priority) - getPriorityRank(right.priority),
+        )
+      }
+
+      if (projectViewFilters.durationSort) {
+        const leftDuration = getProjectDurationDays(left.startDate, left.endDate)
+        const rightDuration = getProjectDurationDays(right.startDate, right.endDate)
+        comparators.push(projectViewFilters.durationSort === 'long' ? rightDuration - leftDuration : leftDuration - rightDuration)
+      }
+
+      comparators.push(left.startDate.localeCompare(right.startDate))
+      comparators.push(left.endDate.localeCompare(right.endDate))
+      comparators.push(left.name.localeCompare(right.name))
+
+      return comparators.find((value) => value !== 0) ?? 0
+    })
+
+    return sortedProjects.map((project) => {
+      const upcomingProjectSchedules = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey)
+      const milestones = upcomingProjectSchedules.filter((schedule) => schedule.kind === 'major')
+      const remainingCount = sortedSchedules.filter((schedule) => schedule.projectId === project.id && schedule.date >= todayKey).length
+      const nextSchedules = upcomingProjectSchedules.slice(0, 2)
+      const hiddenNextScheduleCount = Math.max(upcomingProjectSchedules.length - nextSchedules.length, 0)
+      const statusInfo = getProjectStatusInfo(project, todayKey)
+
+      return {
+        ...project,
+        duration: formatProjectDuration(project.startDate, project.endDate),
+        remainingCount,
+        nextSchedules,
+        hiddenNextScheduleCount,
+        milestone: milestones[0] ? `${milestones[0].title} · ${formatDateLabel(milestones[0].date, milestones[0].time)}` : '남아 있는 주요 일정이 없습니다.',
+        status: statusInfo.status,
+        daysUntilStart: statusInfo.daysUntilStart,
+      }
+    })
+  }, [projectViewFilters, projects, sortedSchedules, todayKey])
 
   const summaryCards = useMemo<
     Array<{
@@ -622,14 +743,14 @@ export default function Home() {
     }>
   >(
     () => [
-      {
-        label: '진행 중 프로젝트',
-        value: `${projects.length}개`,
-        note: '현재 등록된 프로젝트 전체 개수입니다.',
-        tab: 'project-view' as DashboardTab,
-        quickFilter: 'all' as ScheduleQuickFilter,
-          filters: { projectId: '', startDate: '', endDate: '', priority: '' as const, kind: '' as const },
-      },
+        {
+          label: '진행 중 프로젝트',
+          value: `${projects.filter((project) => getProjectStatusInfo(project, todayKey).status === 'in-progress').length}개`,
+          note: '현재 날짜 기준으로 진행 중인 프로젝트 개수입니다.',
+          tab: 'project-view' as DashboardTab,
+          quickFilter: 'all' as ScheduleQuickFilter,
+            filters: { projectId: '', startDate: '', endDate: '', priority: '' as const, kind: '' as const },
+        },
       {
         label: '이번 주 전체 일정',
         value: `${schedules.filter((schedule) => schedule.date >= currentWeekRange.startDate && schedule.date <= currentWeekRange.endDate).length}건`,
@@ -655,8 +776,8 @@ export default function Home() {
           filters: { projectId: '', startDate: todayKey, endDate: '', priority: '' as const, kind: '' as const },
       },
     ],
-    [currentWeekRange.endDate, currentWeekRange.startDate, projects.length, schedules, todayKey],
-  )
+      [currentWeekRange.endDate, currentWeekRange.startDate, projects, schedules, todayKey],
+    )
   const scheduleProjectShortcutMessage = useMemo(() => {
     if (!scheduleProjectShortcutId) return ''
     const projectName = projects.find((project) => project.id === scheduleProjectShortcutId)?.name ?? '선택한 프로젝트'
@@ -849,15 +970,18 @@ export default function Home() {
   const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setProjectForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleChange = (field: keyof ScheduleFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleForm((current) => ({ ...current, [field]: event.target.value }))
+  const handleProjectViewFilterChange = (field: keyof ProjectViewFilters) => (event: ChangeEvent<HTMLSelectElement>) =>
+    setProjectViewFilters((current) => ({ ...current, [field]: event.target.value as ProjectViewFilters[typeof field] }))
   const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setScheduleProjectShortcutId(null)
+      setScheduleProjectShortcutId(null)
     setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
   }
 
   const goToDashboardHome = () => {
-    setActiveTab('project-view')
-    setScheduleQuickFilter('all')
-    setScheduleProjectShortcutId(null)
+      setActiveTab('project-view')
+      setScheduleQuickFilter('all')
+      setProjectViewFilters({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })
+      setScheduleProjectShortcutId(null)
     setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
     setEditingProjectId(null)
     setEditingScheduleId(null)
@@ -1043,16 +1167,77 @@ export default function Home() {
   const renderTabContent = () => {
     if (activeTab === 'project-view') {
       return (
-        <Card padding="lg" className="border-transparent bg-surface-primary shadow-m">
-          <div className="space-y-4">
-            {projectTimelineCards.map((project) => (
-                <Card key={project.id} padding="md" className="border-black/5 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_28px_rgba(15,23,42,0.05)]">
+          <Card padding="lg" className="border-transparent bg-surface-primary shadow-m">
+            <div className={tabContentInsetClassName}>
+              <div aria-hidden className={tabContentLeadSpacerClassName} />
+              <div className="space-y-6">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5 xl:items-end">
+                  <label className="block space-y-2">
+                    <Text variant="detail20" color="text-fg-tertiary">시작일 순</Text>
+                    <select value={projectViewFilters.startDateSort} onChange={handleProjectViewFilterChange('startDateSort')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                      <option value="">기본</option>
+                      <option value="asc">빠른 순</option>
+                      <option value="desc">늦은 순</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-2">
+                    <Text variant="detail20" color="text-fg-tertiary">종료일 순</Text>
+                    <select value={projectViewFilters.endDateSort} onChange={handleProjectViewFilterChange('endDateSort')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                      <option value="">기본</option>
+                      <option value="asc">빠른 순</option>
+                      <option value="desc">늦은 순</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-2">
+                    <Text variant="detail20" color="text-fg-tertiary">우선순위</Text>
+                    <select value={projectViewFilters.priorityMode} onChange={handleProjectViewFilterChange('priorityMode')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                      <option value="">전체 우선순위</option>
+                      <option value="high-first">높은 순</option>
+                      <option value="low-first">낮은 순</option>
+                      <option value="only-top">최우선만</option>
+                      <option value="only-high">높음만</option>
+                      <option value="only-normal">보통만</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-2">
+                    <Text variant="detail20" color="text-fg-tertiary">기간 순</Text>
+                    <select value={projectViewFilters.durationSort} onChange={handleProjectViewFilterChange('durationSort')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                      <option value="">기본</option>
+                      <option value="long">긴 순</option>
+                      <option value="short">짧은 순</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-2">
+                    <Text variant="detail20" color="text-fg-tertiary">진행상태</Text>
+                    <select value={projectViewFilters.status} onChange={handleProjectViewFilterChange('status')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                      <option value="">전체 상태</option>
+                      <option value="in-progress">진행 중</option>
+                      <option value="completed">완료</option>
+                      <option value="upcoming">진행 전</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-surface-primary px-4 py-3">
+                  <Text variant="detail20" color="text-fg-secondary">현재 조건에 맞는 프로젝트 {projectTimelineCards.length}개</Text>
+                  <Button variant="outlineDark" size="sm" shape="round" onClick={() => setProjectViewFilters({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })}>
+                    필터 초기화
+                  </Button>
+                </div>
+              </div>
+              {projectTimelineCards.map((project) => (
+                  <Card key={project.id} padding="md" className="border-black/5 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_28px_rgba(15,23,42,0.05)]">
                   <div className="space-y-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between">
-                        <div className="space-y-2 pt-1 lg:flex lg:min-h-[72px] lg:flex-col lg:justify-between lg:pt-1.5">
-                          <button type="button" onClick={() => applyProjectAllSchedulesShortcut(project.id)} className="w-fit text-left transition hover:opacity-80">
-                            <Text variant="projectTitle" as="h3" color="text-fg-primary">{project.name}</Text>
-                          </button>
+                          <div className="space-y-2 pt-1 lg:flex lg:min-h-[72px] lg:flex-col lg:justify-between lg:pt-1.5">
+                            <button type="button" onClick={() => applyProjectAllSchedulesShortcut(project.id)} className="w-fit text-left transition hover:opacity-80">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <ProjectMetaBadge className={projectStatusTone[project.status]} label={projectStatusLabel[project.status]} />
+                                {project.daysUntilStart !== null && project.daysUntilStart > 0 && project.daysUntilStart <= 7 && (
+                                  <ProjectMetaBadge className="border-orange-200 bg-orange-50 text-orange-900" label={`D-${project.daysUntilStart}`} />
+                                )}
+                                <Text variant="projectTitle" as="h3" color="text-fg-primary">{project.name}</Text>
+                              </div>
+                            </button>
                           <div className="flex flex-wrap items-center gap-2">
                             <Text variant="detail20" color="text-fg-secondary">{project.duration}</Text>
                             <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
@@ -1167,17 +1352,23 @@ export default function Home() {
                       )}
                     </div>
                   </div>
-                </Card>
+                  </Card>
               ))}
-          </div>
-        </Card>
-      )
+              {projectTimelineCards.length === 0 && (
+                <Card padding="md" className="border-[var(--color-border)] bg-white shadow-s">
+                  <Text variant="detail20" color="text-fg-secondary">선택한 조건에 맞는 프로젝트가 없습니다.</Text>
+                </Card>
+              )}
+            </div>
+          </Card>
+        )
     }
 
     if (activeTab === 'schedule-list') {
       return (
         <Card padding="lg" className="border-transparent bg-white shadow-m">
-            <div className="space-y-6">
+            <div className={tabContentInsetClassName}>
+              <div aria-hidden className={tabContentLeadSpacerClassName} />
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(0,0.82fr))] xl:items-end">
                 <label className="block space-y-2"><Text variant="detail20" color="text-fg-tertiary">프로젝트별</Text><select value={scheduleFilters.projectId} onChange={handleScheduleFilterChange('projectId')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="">전체 프로젝트</option>{projectOptions.map((project) => <option key={project.value} value={project.value}>{project.label}</option>)}</select></label>
                 <label className="block space-y-2"><Text variant="detail20" color="text-fg-tertiary">시작일</Text><input type="date" value={scheduleFilters.startDate} onChange={handleScheduleFilterChange('startDate')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
@@ -1278,7 +1469,8 @@ export default function Home() {
     if (activeTab === 'project-create') {
       return (
         <Card padding="lg" className="border-transparent bg-white shadow-m">
-          <div className="space-y-6">
+          <div className={tabContentInsetClassName}>
+            <div aria-hidden className={tabContentLeadSpacerClassName} />
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">프로젝트 이름</Text><input value={projectForm.name} onChange={handleProjectChange('name')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="프로젝트 이름을 입력해 주세요" /></label>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">담당 조직</Text><input value={projectForm.owner} onChange={handleProjectChange('owner')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="담당 팀 또는 담당자를 입력해 주세요" /></label>
@@ -1350,7 +1542,8 @@ export default function Home() {
     if (activeTab === 'schedule-create') {
       return (
         <Card padding="lg" className="border-transparent bg-white shadow-m">
-          <div className="space-y-6">
+          <div className={tabContentInsetClassName}>
+            <div aria-hidden className={tabContentLeadSpacerClassName} />
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 이름</Text><input value={scheduleForm.title} onChange={handleScheduleChange('title')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="일정 이름을 입력해 주세요" /></label>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">연결 프로젝트</Text><select value={scheduleForm.projectId} onChange={handleScheduleChange('projectId')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{projectOptions.map((project) => <option key={project.value} value={project.value}>{project.label}</option>)}</select></label>
@@ -1464,8 +1657,9 @@ export default function Home() {
 
       return (
         <div className="space-y-6">
-          <Card padding="md" className="border-transparent bg-white shadow-m">
-            <div className="space-y-6">
+          <Card padding="lg" className="border-transparent bg-white shadow-m">
+              <div className={tabContentInsetClassName}>
+              <div aria-hidden className={tabContentLeadSpacerClassName} />
               {googleClientId ? (
                   <div className="space-y-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
