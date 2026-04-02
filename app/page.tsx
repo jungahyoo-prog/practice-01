@@ -543,6 +543,7 @@ export default function Home() {
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
+  const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
   const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
   const { authorize, calendars, disconnect, events, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
@@ -689,11 +690,21 @@ export default function Home() {
     }
   }, [authError])
 
-  useEffect(() => {
-    if (isConnected && selectedCalendarId) {
-      setCalendarFeedback({ tone: 'success', text: '구글 계정 연결이 완료되었습니다. 이제 일정이 선택한 캘린더에 직접 저장됩니다.' })
-    }
-  }, [isConnected, selectedCalendarId])
+    useEffect(() => {
+      if (isConnected && selectedCalendarId) {
+        setCalendarFeedback({ tone: 'success', text: '구글 계정 연결이 완료되었습니다. 이제 일정이 선택한 캘린더에 직접 저장됩니다.' })
+      }
+    }, [isConnected, selectedCalendarId])
+
+    useEffect(() => {
+      if (activeTab !== 'schedule-list' || !highlightedScheduleId) return
+
+      const timer = window.setTimeout(() => {
+        setHighlightedScheduleId(null)
+      }, 4500)
+
+      return () => window.clearTimeout(timer)
+    }, [activeTab, highlightedScheduleId])
 
   const effectiveCalendarId = isConnected ? selectedCalendarId : calendarId
   const calendarEmbedUrl = effectiveCalendarId ? buildGoogleCalendarEmbedUrl(effectiveCalendarId) : ''
@@ -718,9 +729,9 @@ export default function Home() {
     const resolvedRepeatCustomLabel =
       schedule.repeatType === 'custom' && !schedule.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, schedule.date) : schedule.repeatCustomLabel
 
-    if (isConnected && selectedCalendarId) {
-      try {
-        await addEventToCalendar({
+      if (isConnected && selectedCalendarId) {
+        try {
+          await addEventToCalendar({
           calendarId: selectedCalendarId,
           title: schedule.title,
           date: schedule.date,
@@ -728,13 +739,15 @@ export default function Home() {
           repeatType: schedule.repeatType,
           repeatCustom: resolvedRepeatCustom,
           memo: schedule.memo,
-          projectName,
-        })
-        setCalendarFeedback({ tone: 'success', text: `선택한 캘린더${selectedCalendar?.summary ? `(${selectedCalendar.summary})` : ''}에 일정이 저장되었습니다.` })
-        setActiveTab('calendar')
-      } catch {
-        setCalendarFeedback({ tone: 'error', text: '구글 캘린더 저장에 실패했습니다. 로그인 상태나 권한을 다시 확인해 주세요.' })
-      }
+            projectName,
+          })
+          setCalendarFeedback({ tone: 'success', text: `선택한 캘린더${selectedCalendar?.summary ? `(${selectedCalendar.summary})` : ''}에 일정이 저장되었습니다.` })
+          if (typeof window !== 'undefined') {
+            window.alert('구글 캘린더 등록이 완료되었습니다.')
+          }
+        } catch {
+          setCalendarFeedback({ tone: 'error', text: '구글 캘린더 저장에 실패했습니다. 로그인 상태나 권한을 다시 확인해 주세요.' })
+        }
       return
     }
 
@@ -918,13 +931,17 @@ export default function Home() {
 
     setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? nextSchedule : schedule)) : [...current, nextSchedule]))
 
-    if (scheduleForm.syncToGoogleCalendar) {
-      await saveScheduleToConnectedCalendar(nextSchedule, projects.find((project) => project.id === nextSchedule.projectId)?.name)
-    }
+      if (scheduleForm.syncToGoogleCalendar) {
+        await saveScheduleToConnectedCalendar(nextSchedule, projects.find((project) => project.id === nextSchedule.projectId)?.name)
+      }
 
-    setActiveTab('schedule-list')
-    resetScheduleForm(scheduleForm.projectId)
-  }
+      setScheduleQuickFilter('all')
+      setScheduleProjectShortcutId(nextSchedule.projectId)
+      setScheduleFilters({ projectId: nextSchedule.projectId, startDate: '', endDate: '', priority: '', kind: '' })
+      setHighlightedScheduleId(nextSchedule.id)
+      setActiveTab('schedule-list')
+      resetScheduleForm(scheduleForm.projectId)
+    }
 
   const editProject = (projectId: string) => {
     const target = projects.find((project) => project.id === projectId)
@@ -1159,7 +1176,11 @@ export default function Home() {
                 {filteredSchedules.map((schedule) => {
                   const project = projects.find((item) => item.id === schedule.projectId)
                   return (
-                    <Card key={schedule.id} padding="md" className={`border-transparent ${getScheduleCardTone(schedule.priority)} shadow-s`}>
+                    <Card
+                      key={schedule.id}
+                      padding="md"
+                      className={`${highlightedScheduleId === schedule.id ? 'border-blue-300 shadow-[0_0_0_1px_rgba(37,99,235,0.14),0_10px_24px_rgba(37,99,235,0.12)]' : 'border-transparent'} ${getScheduleCardTone(schedule.priority)} shadow-s transition-shadow`}
+                    >
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
