@@ -1,14 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createGoogleCalendarEvent,
   fetchGoogleCalendarEvents,
   fetchGoogleCalendars,
   fetchGoogleUserProfile,
   googleCalendarScope,
-  type GoogleCalendarItem,
   type GoogleCalendarEventItem,
+  type GoogleCalendarItem,
 } from '@/services/googleCalendar'
 
 type GoogleAuthResult =
@@ -29,6 +29,29 @@ export function useGoogleCalendar(isScriptReady: boolean) {
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
   const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null)
 
+  const refreshEvents = useCallback(
+    async (calendarId = selectedCalendarId) => {
+      if (!accessToken || !calendarId) {
+        setEvents([])
+        return [] as GoogleCalendarEventItem[]
+      }
+
+      setIsEventsLoading(true)
+
+      try {
+        const nextEvents = await fetchGoogleCalendarEvents(accessToken, calendarId)
+        setEvents(nextEvents)
+        return nextEvents
+      } catch {
+        setAuthError('?좏깮??罹섎┛???쇱젙??遺덈윭?ㅼ? 紐삵뻽?듬땲??')
+        return [] as GoogleCalendarEventItem[]
+      } finally {
+        setIsEventsLoading(false)
+      }
+    },
+    [accessToken, selectedCalendarId],
+  )
+
   useEffect(() => {
     if (!isScriptReady || !googleClientId || typeof window === 'undefined' || !window.google?.accounts?.oauth2) return
 
@@ -40,12 +63,12 @@ export function useGoogleCalendar(isScriptReady: boolean) {
           setAuthError('')
           setAccessToken(response.access_token)
         } else {
-          setAuthError('토큰을 받지 못했습니다.')
+          setAuthError('?좏겙??諛쏆? 紐삵뻽?듬땲??')
         }
         setIsAuthorizing(false)
       },
       error_callback: (error) => {
-        setAuthError(error?.type === 'popup_closed' ? '로그인 창이 닫혀 연결이 완료되지 않았습니다.' : '구글 로그인 중 오류가 발생했습니다.')
+        setAuthError(error?.type === 'popup_closed' ? '濡쒓렇??李쎌씠 ?ロ? ?곌껐???꾨즺?섏? ?딆븯?듬땲??' : '援ш? 濡쒓렇??以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')
         setIsAuthorizing(false)
       },
     })
@@ -73,7 +96,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
           setSelectedCalendarId(defaultCalendar?.id ?? '')
         }
       } catch {
-        if (isMounted) setAuthError('로그인은 되었지만 캘린더 목록을 불러오지 못했습니다.')
+        if (isMounted) setAuthError('濡쒓렇?몄? ?섏뿀吏留?罹섎┛??紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??')
       } finally {
         if (isMounted) setIsCalendarsLoading(false)
       }
@@ -84,7 +107,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     return () => {
       isMounted = false
     }
-  }, [accessToken])
+  }, [accessToken, selectedCalendarId])
 
   useEffect(() => {
     if (!accessToken || !selectedCalendarId) {
@@ -92,28 +115,8 @@ export function useGoogleCalendar(isScriptReady: boolean) {
       return
     }
 
-    let isMounted = true
-
-    const loadCalendarEvents = async () => {
-      setIsEventsLoading(true)
-      try {
-        const nextEvents = await fetchGoogleCalendarEvents(accessToken, selectedCalendarId)
-        if (isMounted) {
-          setEvents(nextEvents)
-        }
-      } catch {
-        if (isMounted) setAuthError('선택한 캘린더 일정을 불러오지 못했습니다.')
-      } finally {
-        if (isMounted) setIsEventsLoading(false)
-      }
-    }
-
-    void loadCalendarEvents()
-
-    return () => {
-      isMounted = false
-    }
-  }, [accessToken, selectedCalendarId])
+    void refreshEvents(selectedCalendarId)
+  }, [accessToken, refreshEvents, selectedCalendarId])
 
   const isConnected = useMemo(() => Boolean(accessToken), [accessToken])
   const selectedCalendar = useMemo(() => calendars.find((calendar) => calendar.id === selectedCalendarId) ?? null, [calendars, selectedCalendarId])
@@ -144,6 +147,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     setSelectedCalendarId('')
     setGoogleEmail('')
     setAuthError('')
+    setEvents([])
   }
 
   const addEventToCalendar = async (payload: {
@@ -161,7 +165,11 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     setIsSavingEvent(true)
 
     try {
-      return await createGoogleCalendarEvent(accessToken, payload.calendarId, payload)
+      const createdEvent = await createGoogleCalendarEvent(accessToken, payload.calendarId, payload)
+      if (payload.calendarId === selectedCalendarId) {
+        await refreshEvents(payload.calendarId)
+      }
+      return createdEvent
     } finally {
       setIsSavingEvent(false)
     }
@@ -185,5 +193,6 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     selectedCalendarId,
     setSelectedCalendarId,
     addEventToCalendar,
+    refreshEvents,
   }
 }

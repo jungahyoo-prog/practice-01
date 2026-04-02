@@ -362,6 +362,16 @@ function parseGoogleEventDate(dateValue?: string, dateTimeValue?: string) {
   }
 }
 
+function hasMatchingGoogleCalendarEvent(
+  events: Array<{ summary?: string; start?: { date?: string; dateTime?: string } }>,
+  schedule: Pick<ScheduleItem, 'title' | 'date' | 'time'>,
+) {
+  return events.some((event) => {
+    const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
+    return (event.summary ?? '').trim() === schedule.title.trim() && date === schedule.date && time === schedule.time
+  })
+}
+
 function normalizeImportedCalendarDescription(description?: string) {
   if (!description) return ''
 
@@ -546,7 +556,7 @@ export default function Home() {
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
   const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
-  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar } = useGoogleCalendar(isGoogleScriptReady)
+  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
@@ -729,12 +739,21 @@ export default function Home() {
     const resolvedRepeatCustomLabel =
       schedule.repeatType === 'custom' && !schedule.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, schedule.date) : schedule.repeatCustomLabel
 
-      if (isConnected && selectedCalendarId) {
-        try {
-          await addEventToCalendar({
-          calendarId: selectedCalendarId,
-          title: schedule.title,
-          date: schedule.date,
+        if (isConnected && selectedCalendarId) {
+          try {
+            const latestEvents = await refreshEvents(selectedCalendarId)
+            if (hasMatchingGoogleCalendarEvent(latestEvents, schedule)) {
+              if (typeof window !== 'undefined') {
+                window.alert('이미 등록되어 있는 일정입니다.')
+              }
+              setCalendarFeedback({ tone: 'default', text: '이미 선택한 구글 캘린더에 등록된 일정입니다.' })
+              return
+            }
+
+            await addEventToCalendar({
+            calendarId: selectedCalendarId,
+            title: schedule.title,
+            date: schedule.date,
           time: schedule.time,
           repeatType: schedule.repeatType,
           repeatCustom: resolvedRepeatCustom,
@@ -751,8 +770,10 @@ export default function Home() {
       return
     }
 
-    openGoogleCalendar(buildGoogleCalendarEventUrl({ ...schedule, repeatCustom: resolvedRepeatCustom, repeatCustomLabel: resolvedRepeatCustomLabel }, projectName, effectiveCalendarId))
-    setCalendarFeedback({ tone: 'default', text: '로그인 연동이 없어 브라우저의 기본 캘린더 추가 화면으로 열었습니다.' })
+    if (typeof window !== 'undefined') {
+      window.alert('로그인이 필요합니다.')
+    }
+    setCalendarFeedback({ tone: 'error', text: '구글 캘린더에 등록하려면 로그인이 필요합니다.' })
   }
 
   const saveScheduleToConnectedCalendar = async (schedule: ScheduleItem, projectName?: string) => {
@@ -765,6 +786,15 @@ export default function Home() {
     }
 
     try {
+      const latestEvents = await refreshEvents(selectedCalendarId)
+      if (hasMatchingGoogleCalendarEvent(latestEvents, schedule)) {
+        if (typeof window !== 'undefined') {
+          window.alert('이미 등록되어 있는 일정입니다.')
+        }
+        setCalendarFeedback({ tone: 'default', text: '이미 선택한 구글 캘린더에 등록된 일정입니다.' })
+        return false
+      }
+
       await addEventToCalendar({
         calendarId: selectedCalendarId,
         title: schedule.title,
@@ -1432,30 +1462,27 @@ export default function Home() {
       )
     }
 
-    return (
-      <div className="space-y-6">
-        <Card padding="lg" className="border-transparent bg-white shadow-m">
-          <div className="space-y-6">
-            <div className="space-y-2"><Text variant="body24" as="h2" color="text-fg-primary">구글 캘린더</Text><Text variant="detail20" color="text-fg-secondary">캘린더를 직접 선택해서 열고, 일정을 저장할 수 있는 영역입니다.</Text></div>
-            {googleClientId ? (
-              <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
-                <div className="space-y-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div className="space-y-2"><Text variant="detail20" color="text-fg-tertiary">구글 계정 연동</Text><Text variant="detail20" color="text-fg-secondary">{isConnected ? `${googleEmail || '연결된 계정'}으로 로그인되어 있습니다. 저장할 캘린더를 직접 고를 수 있어요.` : '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.'}</Text></div>
-                      {isConnected ? (
-                        <div className="flex flex-col gap-2">
-                          <Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button>
-                          <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>연결 해제</Button>
-                        </div>
-                      ) : <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>구글 로그인</Button>}
-                    </div>
-                    {isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">저장할 캘린더 선택</Text><select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' (기본)' : ''}</option>)}</select></label>}
-                    {isConnected && isCalendarsLoading && <Text variant="detail20" color="text-fg-secondary">캘린더 목록을 불러오는 중입니다.</Text>}
+      return (
+        <div className="space-y-6">
+          <Card padding="md" className="border-transparent bg-white shadow-m">
+            <div className="space-y-6">
+              {googleClientId ? (
+                  <div className="space-y-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="space-y-2"><Text variant="body24" color="text-fg-primary">구글 계정 연동</Text><Text variant="detail20" color="text-fg-secondary">{isConnected ? `${googleEmail || '연결된 계정'}으로 로그인되어 있습니다. 저장할 캘린더를 직접 고를 수 있어요.` : '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.'}</Text></div>
+                        {isConnected ? (
+                          <div className="flex flex-col gap-2">
+                            <Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button>
+                            <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>연결 해제</Button>
+                          </div>
+                        ) : <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>구글 로그인</Button>}
+                      </div>
+                      {isConnected && <label className="block max-w-[720px] space-y-3"><Text variant="detail20" color="text-fg-tertiary">저장할 캘린더 선택</Text><select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' (기본)' : ''}</option>)}</select></label>}
+                      {isConnected && isCalendarsLoading && <Text variant="detail20" color="text-fg-secondary">캘린더 목록을 불러오는 중입니다.</Text>}
                   </div>
-                </Card>
-              ) : (
-                <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s"><Text variant="detail20" color="text-fg-secondary">`NEXT_PUBLIC_GOOGLE_CLIENT_ID`를 설정하면 구글 계정 로그인과 캘린더 직접 저장 기능을 사용할 수 있습니다.</Text></Card>
-              )}
+                ) : (
+                  <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s"><Text variant="detail20" color="text-fg-secondary">`NEXT_PUBLIC_GOOGLE_CLIENT_ID`를 설정하면 구글 계정 로그인과 캘린더 직접 저장 기능을 사용할 수 있습니다.</Text></Card>
+                )}
               {!isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">열어볼 캘린더 ID 또는 이메일</Text><input value={calendarId} onChange={(event) => setCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="example@group.calendar.google.com" /></label>}
             </div>
           </Card>
@@ -1551,8 +1578,8 @@ export default function Home() {
             <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => setActiveTab('calendar')}>
               <Text variant="detail20" color="text-fg-primary">{googleEmail || '연결된 구글 계정'}</Text>
             </button>
-          ) : (
-            <Button variant="outlineDark" size="sm" shape="round" loading={isAuthorizing} onClick={() => { setActiveTab('calendar'); void connectGoogleCalendar() }}>
+            ) : (
+            <Button variant="outlineDark" size="sm" shape="round" loading={isAuthorizing} onClick={() => { void connectGoogleCalendar() }}>
               로그인
             </Button>
           )}
