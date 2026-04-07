@@ -4,7 +4,10 @@ import Script from 'next/script'
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { Spinner } from '@/components/ui/Spinner'
 import { Text } from '@/components/ui/Text'
+import { deleteDashboardProject, deleteDashboardSchedule, loadDashboardData, saveDashboardProject, saveDashboardSchedule, seedDashboardData } from '@/db/dashboard'
+import { getSupabaseSessionUser, isSupabaseConfigured, signInWithGoogleStorageAccount, signOutStorageAccount, subscribeSupabaseAuth } from '@/db/client'
 import { useGoogleCalendar } from '@/hooks/useGoogleCalendar'
 
 type ScheduleKind = 'major' | 'general'
@@ -594,9 +597,19 @@ function FieldHelpButton({
 export default function Home() {
   const todayKey = formatLocalDateKey(new Date())
   const [isGoogleScriptReady, setIsGoogleScriptReady] = useState(false)
-  const [activeTab, setActiveTab] = useState<DashboardTab>('project-view')
+  const [activeTab, setActiveTab] = useState<DashboardTab>(() => {
+    if (typeof window === 'undefined') return 'project-view'
+    const storedTab = window.sessionStorage.getItem('dashboard-active-tab')
+    return tabs.some((tab) => tab.key === storedTab) ? (storedTab as DashboardTab) : 'project-view'
+  })
   const [projects, setProjects] = useState<ProjectItem[]>(initialProjects)
   const [schedules, setSchedules] = useState<ScheduleItem[]>(initialSchedules)
+  const [isStorageBootstrapping, setIsStorageBootstrapping] = useState(false)
+  const [storageError, setStorageError] = useState('')
+  const [isPersistentStorageEnabled, setIsPersistentStorageEnabled] = useState(false)
+  const [storageAccountEmail, setStorageAccountEmail] = useState('')
+  const [isStorageAccountLoading, setIsStorageAccountLoading] = useState(false)
+  const [storageIdentityVersion, setStorageIdentityVersion] = useState(0)
   const [calendarId, setCalendarId] = useState('jungah.yoo@dreamus.io')
   const [calendarFeedback, setCalendarFeedback] = useState<CalendarFeedback>({ tone: 'default', text: '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.' })
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
@@ -614,6 +627,119 @@ export default function Home() {
   const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
   const { authorize, calendars, disconnect, events, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.sessionStorage.setItem('dashboard-active-tab', activeTab)
+  }, [activeTab])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+
+    let isMounted = true
+
+    const syncStorageAccount = async () => {
+      setIsStorageAccountLoading(true)
+
+      try {
+        const user = await getSupabaseSessionUser()
+        if (!isMounted) return
+
+        setStorageAccountEmail(user?.is_anonymous ? '' : user?.email ?? user?.user_metadata?.email ?? '')
+      } catch {
+        if (!isMounted) return
+
+        setStorageAccountEmail('')
+      } finally {
+        if (isMounted) {
+          setIsStorageAccountLoading(false)
+        }
+      }
+    }
+
+    void syncStorageAccount()
+
+    const {
+      data: { subscription },
+    } = subscribeSupabaseAuth((_event, session) => {
+      setStorageAccountEmail(session?.user?.is_anonymous ? '' : session?.user?.email ?? session?.user?.user_metadata?.email ?? '')
+      setStorageIdentityVersion((current) => current + 1)
+    })
+
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+
+    let isMounted = true
+
+    const bootstrapStorage = async () => {
+      setIsStorageBootstrapping(true)
+      setStorageError('')
+
+      try {
+        const user = await getSupabaseSessionUser()
+
+        if (!user || user.is_anonymous) {
+          if (!isMounted) return
+
+          setIsPersistentStorageEnabled(false)
+          setProjects(initialProjects)
+          setSchedules(initialSchedules)
+          setScheduleForm((current) => {
+            if (initialProjects.some((project) => project.id === current.projectId)) {
+              return current
+            }
+
+            return defaultScheduleForm(initialProjects[0]?.id ?? '', todayKey)
+          })
+          return
+        }
+
+        let nextData = await loadDashboardData()
+
+        if (!nextData.projects.length && !nextData.schedules.length) {
+          nextData = await seedDashboardData(initialProjects, initialSchedules)
+        }
+
+        if (!isMounted) return
+
+        setProjects(nextData.projects)
+        setSchedules(nextData.schedules)
+        setIsPersistentStorageEnabled(true)
+        setScheduleForm((current) => {
+          if (nextData.projects.some((project) => project.id === current.projectId)) {
+            return current
+          }
+
+          return defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey)
+        })
+        setCustomRepeatConfig((current) => ({
+          ...current,
+          weeklyDays: [String(new Date(`${defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey).date}T00:00:00`).getDay())],
+        }))
+      } catch {
+        if (!isMounted) return
+
+        setStorageError('앱 저장 계정을 연결하지 못했습니다. 상단 로그인 버튼으로 다시 로그인해 주세요.')
+        setIsPersistentStorageEnabled(false)
+      } finally {
+        if (isMounted) {
+          setIsStorageBootstrapping(false)
+        }
+      }
+    }
+
+    void bootstrapStorage()
+
+    return () => {
+      isMounted = false
+    }
+  }, [storageIdentityVersion, todayKey])
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
@@ -854,6 +980,34 @@ export default function Home() {
     setCalendarFeedback({ tone: 'default', text: '구글 로그인 창이 열렸습니다. 권한을 승인하면 캘린더 목록이 자동으로 표시됩니다.' })
   }
 
+  const connectStorageAccount = async () => {
+    if (!isSupabaseConfigured) {
+      setStorageError('Supabase 환경변수가 필요합니다. 저장 기능 설정을 먼저 확인해 주세요.')
+      return
+    }
+
+    try {
+      setIsStorageAccountLoading(true)
+      setStorageError('')
+      await signInWithGoogleStorageAccount()
+    } catch {
+      setStorageError('구글 계정 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      setIsStorageAccountLoading(false)
+    }
+  }
+
+  const disconnectStorageAccount = async () => {
+    try {
+      setIsStorageAccountLoading(true)
+      await signOutStorageAccount()
+      setStorageError('')
+    } catch {
+      setStorageError('앱 저장 계정 연결 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setIsStorageAccountLoading(false)
+    }
+  }
+
   const handleAddScheduleToCalendar = async (schedule: ScheduleItem, projectName?: string) => {
     const resolvedRepeatCustom =
       schedule.repeatType === 'custom' && !schedule.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, schedule.date) : schedule.repeatCustom
@@ -1046,7 +1200,7 @@ export default function Home() {
     setIsCustomRepeatMenuOpen(false)
   }
 
-  const saveProject = () => {
+  const saveProject = async () => {
     const normalizedStartDate = projectForm.startDate
     const normalizedEndDate = projectForm.endDate < normalizedStartDate ? normalizedStartDate : projectForm.endDate
     const currentProject = projects.find((project) => project.id === editingProjectId)
@@ -1059,7 +1213,20 @@ export default function Home() {
       startDate: normalizedStartDate,
       endDate: normalizedEndDate,
     }
-    setProjects((current) => (editingProjectId ? current.map((project) => (project.id === editingProjectId ? nextProject : project)) : [...current, nextProject]))
+
+    if (isPersistentStorageEnabled) {
+      try {
+        const savedProject = await saveDashboardProject(nextProject)
+        setProjects((current) => (editingProjectId ? current.map((project) => (project.id === editingProjectId ? savedProject : project)) : [...current, savedProject]))
+        setStorageError('')
+      } catch {
+        setStorageError('프로젝트 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+    } else {
+      setProjects((current) => (editingProjectId ? current.map((project) => (project.id === editingProjectId ? nextProject : project)) : [...current, nextProject]))
+    }
+
     if (!editingProjectId) setScheduleForm((current) => ({ ...current, projectId: nextProject.id }))
     setActiveTab('project-view')
     resetProjectForm()
@@ -1083,7 +1250,18 @@ export default function Home() {
       memo: scheduleForm.memo || '메모 없음',
     }
 
-    setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? nextSchedule : schedule)) : [...current, nextSchedule]))
+    if (isPersistentStorageEnabled) {
+      try {
+        const savedSchedule = await saveDashboardSchedule(nextSchedule)
+        setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? savedSchedule : schedule)) : [...current, savedSchedule]))
+        setStorageError('')
+      } catch {
+        setStorageError('일정 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+    } else {
+      setSchedules((current) => (editingScheduleId ? current.map((schedule) => (schedule.id === editingScheduleId ? nextSchedule : schedule)) : [...current, nextSchedule]))
+    }
 
       if (scheduleForm.syncToGoogleCalendar) {
         await saveScheduleToConnectedCalendar(nextSchedule, projects.find((project) => project.id === nextSchedule.projectId)?.name)
@@ -1150,8 +1328,19 @@ export default function Home() {
     setActiveTab('schedule-create')
   }
 
-  const removeProject = (projectId: string) => {
+  const removeProject = async (projectId: string) => {
     if (typeof window !== 'undefined' && !window.confirm('정말 삭제하시겠습니까?')) return
+
+    if (isPersistentStorageEnabled) {
+      try {
+        await deleteDashboardProject(projectId)
+        setStorageError('')
+      } catch {
+        setStorageError('프로젝트 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+    }
+
     const remainingProjects = projects.filter((project) => project.id !== projectId)
     setProjects(remainingProjects)
     setSchedules((current) => current.filter((schedule) => schedule.projectId !== projectId))
@@ -1159,8 +1348,19 @@ export default function Home() {
     if (scheduleForm.projectId === projectId) resetScheduleForm(remainingProjects[0]?.id ?? '')
   }
 
-  const removeSchedule = (scheduleId: string) => {
+  const removeSchedule = async (scheduleId: string) => {
     if (typeof window !== 'undefined' && !window.confirm('정말 삭제하시겠습니까?')) return
+
+    if (isPersistentStorageEnabled) {
+      try {
+        await deleteDashboardSchedule(scheduleId)
+        setStorageError('')
+      } catch {
+        setStorageError('일정 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+    }
+
     setSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId))
     if (editingScheduleId === scheduleId) resetScheduleForm(scheduleForm.projectId)
   }
@@ -1660,6 +1860,29 @@ export default function Home() {
           <Card padding="lg" className="border-transparent bg-white shadow-m">
               <div className={tabContentInsetClassName}>
               <div aria-hidden className={tabContentLeadSpacerClassName} />
+              {isSupabaseConfigured && (
+                  <div className="space-y-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="space-y-2">
+                          <Text variant="body24" color="text-fg-primary">앱 저장 계정</Text>
+                          <Text variant="detail20" color="text-fg-secondary">
+                            {storageAccountEmail
+                              ? `${storageAccountEmail} 계정으로 저장 데이터를 불러오고 있습니다.`
+                              : '구글 계정으로 로그인하면 다른 기기에서도 같은 프로젝트와 일정을 이어서 볼 수 있습니다.'}
+                          </Text>
+                        </div>
+                        {storageAccountEmail ? (
+                          <Button variant="outlineDark" size="sm" shape="round" loading={isStorageAccountLoading} onClick={() => void disconnectStorageAccount()}>
+                            연결 해제
+                          </Button>
+                        ) : (
+                          <Button variant="primary" size="sm" shape="round" loading={isStorageAccountLoading} onClick={() => void connectStorageAccount()}>
+                            앱 계정 로그인
+                          </Button>
+                        )}
+                      </div>
+                  </div>
+                )}
               {googleClientId ? (
                   <div className="space-y-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1768,15 +1991,15 @@ export default function Home() {
             <button type="button" onClick={goToDashboardHome} className="text-left">
               <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
             </button>
-            {isConnected ? (
-            <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => setActiveTab('calendar')}>
-              <Text variant="detail20" color="text-fg-primary">{googleEmail || '연결된 구글 계정'}</Text>
-            </button>
+            {storageAccountEmail ? (
+              <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => setActiveTab('calendar')}>
+                <Text variant="detail20" color="text-fg-primary">{storageAccountEmail}</Text>
+              </button>
             ) : (
-            <Button variant="outlineDark" size="sm" shape="round" loading={isAuthorizing} onClick={() => { void connectGoogleCalendar() }}>
-              로그인
-            </Button>
-          )}
+              <Button variant="outlineDark" size="sm" shape="round" loading={isStorageAccountLoading} onClick={() => { void connectStorageAccount() }}>
+                로그인
+              </Button>
+            )}
         </div>
         <section className="overflow-hidden rounded-[32px] bg-gradient-to-r from-blue-50 via-white to-teal-300/20 p-5 shadow-l md:p-6">
             <div className="space-y-3">
@@ -1800,10 +2023,20 @@ export default function Home() {
               </div>
             </div>
           </section>
-          <section className="space-y-4">
-            <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => setActiveTab(tab.key)}>{tab.label}</Button>)}</div></Card>
-            {renderTabContent()}
-          </section>
+        <section className="space-y-4">
+          {isStorageBootstrapping && (
+            <Card padding="md" className="border-transparent bg-white shadow-s">
+              <Spinner size="sm" variant="primary" label="저장된 프로젝트와 일정을 불러오는 중입니다." />
+            </Card>
+          )}
+          {!isStorageBootstrapping && storageError && (
+            <Card padding="md" className="border-transparent bg-red-50 shadow-s">
+              <Text variant="detail20" color="text-red-700">{storageError}</Text>
+            </Card>
+          )}
+          <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => setActiveTab(tab.key)}>{tab.label}</Button>)}</div></Card>
+          {renderTabContent()}
+        </section>
       </div>
     </main>
   )
