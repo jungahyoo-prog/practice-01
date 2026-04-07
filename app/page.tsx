@@ -567,29 +567,22 @@ function ProjectActionIconButton({
 function FieldHelpButton({
   label,
   note,
-  isOpen,
-  onToggle,
 }: {
   label: string
   note: string
-  isOpen: boolean
-  onToggle: () => void
 }) {
   return (
-    <div className="relative mr-4 shrink-0">
+    <div className="group relative mr-4 shrink-0">
       <button
         type="button"
-        onClick={onToggle}
         aria-label={`${label} 설명 보기`}
         className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[12px] font-[700] text-fg-tertiary transition hover:bg-surface-primary"
       >
         ?
       </button>
-      {isOpen && (
-        <div className="absolute right-0 top-8 z-20 w-[220px] rounded-[20px] bg-gray-800 px-4 py-3 text-left shadow-l">
-          <Text variant="detail20" color="text-alpha-white-700">{note}</Text>
-        </div>
-      )}
+      <div className="pointer-events-none absolute right-0 top-8 z-30 hidden w-[240px] rounded-[20px] bg-gray-800 px-4 py-3 text-left shadow-l group-hover:block group-focus-within:block">
+        <Text variant="detail20" color="text-alpha-white-700" className="whitespace-pre-line">{note}</Text>
+      </div>
     </div>
   )
 }
@@ -624,7 +617,6 @@ export default function Home() {
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
-  const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
   const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
 
@@ -1241,7 +1233,6 @@ export default function Home() {
       setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
       setEditingProjectId(null)
       setEditingScheduleId(null)
-      setActiveFieldHelp(null)
       setProjectForm(defaultProjectForm())
       setScheduleForm(defaultScheduleForm(projects[0]?.id ?? '', todayKey))
       setIsProjectPeriodMenuOpen(false)
@@ -1784,13 +1775,11 @@ export default function Home() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">담당 조직</Text><input value={projectForm.owner} onChange={handleProjectChange('owner')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="담당 팀 또는 담당자를 입력해 주세요" /></label>
                   <label className="block space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <Text variant="detail20" color="text-fg-tertiary">우선순위</Text>
-                      <FieldHelpButton
-                        label="프로젝트 우선순위"
-                        note="프로젝트의 전체 중요도를 정하는 값입니다. 최우선은 가장 먼저 챙겨야 할 프로젝트, 높음은 주요하게 관리할 프로젝트, 보통은 일반 관리 대상으로 이해하면 됩니다."
-                        isOpen={activeFieldHelp === 'project-priority'}
-                        onToggle={() => setActiveFieldHelp((current) => current === 'project-priority' ? null : 'project-priority')}
+                      <div className="flex items-center justify-between gap-3">
+                    <Text variant="detail20" color="text-fg-tertiary">우선순위</Text>
+                    <FieldHelpButton
+                      label="프로젝트 우선순위"
+                        note={'최우선: 내가 주 담당자인 프로젝트\n높음: 내가 주요 기여자인 프로젝트\n보통: 내가 일반 참여자인 프로젝트'}
                       />
                     </div>
                     <select value={projectForm.priority} onChange={handleProjectChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select>
@@ -1928,9 +1917,7 @@ export default function Home() {
                     <Text variant="detail20" color="text-fg-tertiary">일정 구분</Text>
                     <FieldHelpButton
                       label="일정 구분"
-                      note="주요 일정은 꼭 챙겨야 하는 마일스톤이나 핵심 일정입니다. 일반 일정은 진행 중 확인이 필요한 일반 업무 일정입니다."
-                      isOpen={activeFieldHelp === 'schedule-kind'}
-                      onToggle={() => setActiveFieldHelp((current) => current === 'schedule-kind' ? null : 'schedule-kind')}
+                      note={'주요 일정: 미팅 또는 작업이 포함되는 일정\n일반 일정: 진행 상황 체크만 필요한 일정'}
                     />
                   </div>
                   <select value={scheduleForm.kind} onChange={handleScheduleChange('kind')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="major">주요 일정</option><option value="general">일반 일정</option></select>
@@ -1940,9 +1927,7 @@ export default function Home() {
                     <Text variant="detail20" color="text-fg-tertiary">우선순위</Text>
                     <FieldHelpButton
                       label="일정 우선순위"
-                      note="일정 우선순위는 개별 일정의 시급함을 나타냅니다. 최우선은 당장 챙겨야 하는 일정, 높음은 가까운 시점에 우선 확인할 일정, 보통은 일반 관리 일정입니다."
-                      isOpen={activeFieldHelp === 'schedule-priority'}
-                      onToggle={() => setActiveFieldHelp((current) => current === 'schedule-priority' ? null : 'schedule-priority')}
+                      note={'최우선: 지정 시간에 반드시 수행해야 하는 일정\n높음: 지정일 내 수행해야 하는 일정\n일반: 지정일 또는 1-2일 내 확인하면 되는 일정'}
                     />
                   </div>
                   <select value={scheduleForm.priority} onChange={handleScheduleChange('priority')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="최우선">최우선</option><option value="높음">높음</option><option value="보통">보통</option></select>
@@ -2124,7 +2109,7 @@ export default function Home() {
               </Button>
             )}
         </div>
-        <section className="overflow-hidden rounded-[32px] bg-gradient-to-r from-blue-50 via-white to-teal-300/20 p-5 shadow-l md:p-6">
+        <section className="overflow-visible rounded-[32px] bg-gradient-to-r from-blue-50 via-white to-teal-300/20 p-5 shadow-l md:p-6">
             <div className="space-y-3">
               <div className="grid gap-2 lg:grid-cols-4">
                 {summaryCards.map((card) => (
@@ -2135,7 +2120,7 @@ export default function Home() {
                           <Text variant="detail20" color="text-fg-tertiary">{card.label}</Text>
                           <div className="group relative shrink-0" onClick={(event) => event.stopPropagation()}>
                             <button type="button" className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[12px] font-[700] text-fg-tertiary" aria-label={`${card.label} 설명 보기`}>?</button>
-                            <div className="pointer-events-none absolute right-0 top-8 z-20 hidden w-[220px] rounded-[20px] bg-gray-800 px-4 py-3 text-left shadow-l group-hover:block group-focus-within:block"><Text variant="detail20" color="text-alpha-white-700">{card.note}</Text></div>
+                            <div className="pointer-events-none absolute right-0 top-8 z-30 hidden w-[240px] rounded-[20px] bg-gray-800 px-4 py-3 text-left shadow-l group-hover:block group-focus-within:block"><Text variant="detail20" color="text-alpha-white-700">{card.note}</Text></div>
                           </div>
                         </div>
                         <Text variant="detail20" as="p" color="text-fg-primary" className="font-[700]">{card.value}</Text>
