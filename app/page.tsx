@@ -140,8 +140,8 @@ const tabs: { key: DashboardTab; label: string }[] = [
   { key: 'calendar', label: '구글 캘린더' },
 ]
 
-const tabContentInsetClassName = 'space-y-6'
-const tabContentLeadSpacerClassName = 'h-0.5'
+const tabContentInsetClassName = 'space-y-5'
+const tabContentLeadSpacerClassName = 'h-0'
 
 const timelineMonths = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
 
@@ -756,6 +756,89 @@ export default function Home() {
   const todaySchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date === todayKey).slice(0, 3), [sortedSchedules, todayKey])
   const upcomingSchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date > todayKey).slice(0, 4), [sortedSchedules, todayKey])
   const currentWeekRange = useMemo(() => getWeekDateRange(new Date()), [todayKey])
+  const currentEditingProject = useMemo(() => projects.find((project) => project.id === editingProjectId) ?? null, [editingProjectId, projects])
+  const currentEditingSchedule = useMemo(() => schedules.find((schedule) => schedule.id === editingScheduleId) ?? null, [editingScheduleId, schedules])
+  const defaultProjectState = useMemo(() => defaultProjectForm(), [])
+  const defaultScheduleState = useMemo(() => defaultScheduleForm(projects[0]?.id ?? '', todayKey), [projects, todayKey])
+
+  const isProjectFormDirty = useMemo(() => {
+    if (activeTab !== 'project-create') return false
+
+    if (currentEditingProject) {
+      return (
+        projectForm.name !== currentEditingProject.name ||
+        projectForm.owner !== currentEditingProject.owner ||
+        projectForm.priority !== currentEditingProject.priority ||
+        projectForm.startDate !== currentEditingProject.startDate ||
+        projectForm.endDate !== currentEditingProject.endDate
+      )
+    }
+
+    return (
+      projectForm.name !== defaultProjectState.name ||
+      projectForm.owner !== defaultProjectState.owner ||
+      projectForm.priority !== defaultProjectState.priority ||
+      projectForm.startDate !== defaultProjectState.startDate ||
+      projectForm.endDate !== defaultProjectState.endDate ||
+      projectForm.periodPreset !== defaultProjectState.periodPreset
+    )
+  }, [activeTab, currentEditingProject, defaultProjectState, projectForm])
+
+  const isScheduleFormDirty = useMemo(() => {
+    if (activeTab !== 'schedule-create') return false
+
+    if (currentEditingSchedule) {
+      return (
+        scheduleForm.projectId !== currentEditingSchedule.projectId ||
+        scheduleForm.title !== currentEditingSchedule.title ||
+        scheduleForm.date !== currentEditingSchedule.date ||
+        scheduleForm.time !== currentEditingSchedule.time ||
+        scheduleForm.repeatType !== currentEditingSchedule.repeatType ||
+        scheduleForm.repeatCustom !== currentEditingSchedule.repeatCustom ||
+        scheduleForm.repeatCustomLabel !== currentEditingSchedule.repeatCustomLabel ||
+        scheduleForm.priority !== currentEditingSchedule.priority ||
+        scheduleForm.kind !== currentEditingSchedule.kind ||
+        scheduleForm.memo !== currentEditingSchedule.memo ||
+        scheduleForm.syncToGoogleCalendar
+      )
+    }
+
+    return (
+      scheduleForm.projectId !== defaultScheduleState.projectId ||
+      scheduleForm.title !== defaultScheduleState.title ||
+      scheduleForm.date !== defaultScheduleState.date ||
+      scheduleForm.time !== defaultScheduleState.time ||
+      scheduleForm.repeatType !== defaultScheduleState.repeatType ||
+      scheduleForm.repeatCustom !== defaultScheduleState.repeatCustom ||
+      scheduleForm.repeatCustomLabel !== defaultScheduleState.repeatCustomLabel ||
+      scheduleForm.priority !== defaultScheduleState.priority ||
+      scheduleForm.kind !== defaultScheduleState.kind ||
+      scheduleForm.memo !== defaultScheduleState.memo ||
+      scheduleForm.syncToGoogleCalendar !== defaultScheduleState.syncToGoogleCalendar
+    )
+  }, [activeTab, currentEditingSchedule, defaultScheduleState, scheduleForm])
+
+  const confirmDiscardDraft = (onConfirm: () => void) => {
+    const isDirty = isProjectFormDirty || isScheduleFormDirty
+
+    if (!isDirty || typeof window === 'undefined') {
+      onConfirm()
+      return
+    }
+
+    const shouldMove = window.confirm('작성 내용을 저장하지 않으면 초기화됩니다. 화면을 넘기시겠습니까?')
+    if (!shouldMove) return
+
+    if (isProjectFormDirty) {
+      resetProjectForm()
+    }
+
+    if (isScheduleFormDirty) {
+      resetScheduleForm(scheduleForm.projectId)
+    }
+
+    onConfirm()
+  }
 
   const filteredSchedules = useMemo(
     () =>
@@ -1099,36 +1182,44 @@ export default function Home() {
   }
 
   const applySummaryShortcut = (tab: DashboardTab, quickFilter: ScheduleQuickFilter, filters: ScheduleFilters) => {
-    setActiveTab(tab)
-    setScheduleProjectShortcutId(null)
-    if (tab === 'schedule-list') {
-      setScheduleQuickFilter(quickFilter)
-      setScheduleFilters(filters)
-      return
-    }
-    setScheduleQuickFilter('all')
+    confirmDiscardDraft(() => {
+      setActiveTab(tab)
+      setScheduleProjectShortcutId(null)
+      if (tab === 'schedule-list') {
+        setScheduleQuickFilter(quickFilter)
+        setScheduleFilters(filters)
+        return
+      }
+      setScheduleQuickFilter('all')
+    })
   }
 
   const applyProjectRemainingShortcut = (projectId: string) => {
-    setActiveTab('schedule-list')
-    setScheduleQuickFilter('all')
-    setScheduleProjectShortcutId(projectId)
-    setScheduleFilters({ projectId, startDate: todayKey, endDate: '', priority: '', kind: '' })
+    confirmDiscardDraft(() => {
+      setActiveTab('schedule-list')
+      setScheduleQuickFilter('all')
+      setScheduleProjectShortcutId(projectId)
+      setScheduleFilters({ projectId, startDate: todayKey, endDate: '', priority: '', kind: '' })
+    })
   }
 
   const applyProjectAllSchedulesShortcut = (projectId: string) => {
-    setActiveTab('schedule-list')
-    setScheduleQuickFilter('all')
-    setScheduleProjectShortcutId(projectId)
-    setScheduleFilters({ projectId, startDate: '', endDate: '', priority: '', kind: '' })
+    confirmDiscardDraft(() => {
+      setActiveTab('schedule-list')
+      setScheduleQuickFilter('all')
+      setScheduleProjectShortcutId(projectId)
+      setScheduleFilters({ projectId, startDate: '', endDate: '', priority: '', kind: '' })
+    })
   }
 
   const applyProjectMonthShortcut = (projectId: string, monthIndex: number) => {
     const { startDate, endDate } = getMonthDateRange(monthIndex)
-    setActiveTab('schedule-list')
-    setScheduleQuickFilter('all')
-    setScheduleProjectShortcutId(projectId)
-    setScheduleFilters({ projectId, startDate, endDate, priority: '', kind: '' })
+    confirmDiscardDraft(() => {
+      setActiveTab('schedule-list')
+      setScheduleQuickFilter('all')
+      setScheduleProjectShortcutId(projectId)
+      setScheduleFilters({ projectId, startDate, endDate, priority: '', kind: '' })
+    })
   }
 
   const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -1142,18 +1233,20 @@ export default function Home() {
   }
 
   const goToDashboardHome = () => {
+    confirmDiscardDraft(() => {
       setActiveTab('project-view')
       setScheduleQuickFilter('all')
       setProjectViewFilters({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })
       setScheduleProjectShortcutId(null)
-    setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
-    setEditingProjectId(null)
-    setEditingScheduleId(null)
-    setActiveFieldHelp(null)
-    setProjectForm(defaultProjectForm())
-    setScheduleForm(defaultScheduleForm(projects[0]?.id ?? '', todayKey))
-    setIsProjectPeriodMenuOpen(false)
-    setIsCustomRepeatMenuOpen(false)
+      setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
+      setEditingProjectId(null)
+      setEditingScheduleId(null)
+      setActiveFieldHelp(null)
+      setProjectForm(defaultProjectForm())
+      setScheduleForm(defaultScheduleForm(projects[0]?.id ?? '', todayKey))
+      setIsProjectPeriodMenuOpen(false)
+      setIsCustomRepeatMenuOpen(false)
+    })
   }
   const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setCustomRepeatConfig((current) => ({ ...current, [field]: event.target.value }))
@@ -1288,29 +1381,33 @@ export default function Home() {
   const editProject = (projectId: string) => {
     const target = projects.find((project) => project.id === projectId)
     if (!target) return
-    setEditingProjectId(projectId)
-    setProjectForm({ name: target.name, owner: target.owner, priority: target.priority, startDate: target.startDate, endDate: target.endDate, periodPreset: 'custom' })
-    setActiveTab('project-create')
+    confirmDiscardDraft(() => {
+      setEditingProjectId(projectId)
+      setProjectForm({ name: target.name, owner: target.owner, priority: target.priority, startDate: target.startDate, endDate: target.endDate, periodPreset: 'custom' })
+      setActiveTab('project-create')
+    })
   }
 
   const editSchedule = (scheduleId: string) => {
     const target = schedules.find((schedule) => schedule.id === scheduleId)
     if (!target) return
-    setEditingScheduleId(scheduleId)
-    setScheduleForm({
-      projectId: target.projectId,
-      title: target.title,
-      date: target.date,
-      time: target.time,
-      repeatType: target.repeatType,
-      repeatCustom: target.repeatCustom,
-      repeatCustomLabel: target.repeatCustomLabel,
-      priority: target.priority,
-      kind: target.kind,
-      memo: target.memo,
-      syncToGoogleCalendar: false,
+    confirmDiscardDraft(() => {
+      setEditingScheduleId(scheduleId)
+      setScheduleForm({
+        projectId: target.projectId,
+        title: target.title,
+        date: target.date,
+        time: target.time,
+        repeatType: target.repeatType,
+        repeatCustom: target.repeatCustom,
+        repeatCustomLabel: target.repeatCustomLabel,
+        priority: target.priority,
+        kind: target.kind,
+        memo: target.memo,
+        syncToGoogleCalendar: false,
+      })
+      setActiveTab('schedule-create')
     })
-    setActiveTab('schedule-create')
   }
 
   const importGoogleCalendarEvent = (event: { summary?: string; description?: string; start?: { date?: string; dateTime?: string } }) => {
@@ -1320,7 +1417,8 @@ export default function Home() {
       projects.find((project) => event.summary?.includes(project.name)) ??
       projects[0]
 
-    setEditingScheduleId(null)
+    confirmDiscardDraft(() => {
+      setEditingScheduleId(null)
       setScheduleForm({
         projectId: matchedProject?.id ?? '',
         title: event.summary || '가져온 일정',
@@ -1334,8 +1432,9 @@ export default function Home() {
         memo: normalizeImportedCalendarDescription(event.description),
         syncToGoogleCalendar: false,
       })
-    setIsCustomRepeatMenuOpen(false)
-    setActiveTab('schedule-create')
+      setIsCustomRepeatMenuOpen(false)
+      setActiveTab('schedule-create')
+    })
   }
 
   const removeProject = async (projectId: string) => {
@@ -1377,7 +1476,7 @@ export default function Home() {
   const renderTabContent = () => {
     if (activeTab === 'project-view') {
       return (
-          <Card padding="lg" className="border-transparent bg-surface-primary shadow-m">
+          <Card padding="lg" className="border-transparent bg-surface-primary pt-4 shadow-m">
             <div className={tabContentInsetClassName}>
               <div aria-hidden className={tabContentLeadSpacerClassName} />
               <div className="space-y-6">
@@ -1576,7 +1675,7 @@ export default function Home() {
 
     if (activeTab === 'schedule-list') {
       return (
-        <Card padding="lg" className="border-transparent bg-white shadow-m">
+        <Card padding="lg" className="border-transparent bg-white pt-4 shadow-m">
             <div className={tabContentInsetClassName}>
               <div aria-hidden className={tabContentLeadSpacerClassName} />
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(0,0.82fr))] xl:items-end">
@@ -1678,7 +1777,7 @@ export default function Home() {
 
     if (activeTab === 'project-create') {
       return (
-        <Card padding="lg" className="border-transparent bg-white shadow-m">
+        <Card padding="lg" className="border-transparent bg-white pt-4 shadow-m">
           <div className={tabContentInsetClassName}>
             <div aria-hidden className={tabContentLeadSpacerClassName} />
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">프로젝트 이름</Text><input value={projectForm.name} onChange={handleProjectChange('name')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="프로젝트 이름을 입력해 주세요" /></label>
@@ -1751,7 +1850,7 @@ export default function Home() {
     }
     if (activeTab === 'schedule-create') {
       return (
-        <Card padding="lg" className="border-transparent bg-white shadow-m">
+        <Card padding="lg" className="border-transparent bg-white pt-4 shadow-m">
           <div className={tabContentInsetClassName}>
             <div aria-hidden className={tabContentLeadSpacerClassName} />
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 이름</Text><input value={scheduleForm.title} onChange={handleScheduleChange('title')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="일정 이름을 입력해 주세요" /></label>
@@ -1867,7 +1966,7 @@ export default function Home() {
 
       return (
         <div className="space-y-6">
-          <Card padding="lg" className="border-transparent bg-white shadow-m">
+          <Card padding="lg" className="border-transparent bg-white pt-4 shadow-m">
               <div className={tabContentInsetClassName}>
               <div aria-hidden className={tabContentLeadSpacerClassName} />
               {(isSupabaseConfigured || googleClientId) ? (
@@ -2016,7 +2115,7 @@ export default function Home() {
               <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
             </button>
             {storageAccountEmail ? (
-              <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => setActiveTab('calendar')}>
+              <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => activeTab === 'calendar' ? undefined : confirmDiscardDraft(() => setActiveTab('calendar'))}>
                 <Text variant="detail20" color="text-fg-primary">{storageAccountEmail}</Text>
               </button>
             ) : (
@@ -2058,7 +2157,7 @@ export default function Home() {
               <Text variant="detail20" color="text-red-700">{storageError}</Text>
             </Card>
           )}
-          <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => setActiveTab(tab.key)}>{tab.label}</Button>)}</div></Card>
+          <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => activeTab === tab.key ? undefined : confirmDiscardDraft(() => setActiveTab(tab.key))}>{tab.label}</Button>)}</div></Card>
           {renderTabContent()}
         </section>
       </div>
