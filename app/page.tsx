@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
 import { Text } from '@/components/ui/Text'
 import { deleteDashboardProject, deleteDashboardSchedule, loadDashboardData, saveDashboardProject, saveDashboardSchedule, seedDashboardData } from '@/db/dashboard'
-import { getSupabaseSessionUser, isSupabaseConfigured, signInWithGoogleStorageAccount, signOutStorageAccount, subscribeSupabaseAuth } from '@/db/client'
+import { getSupabaseSession, getSupabaseSessionUser, isSupabaseConfigured, signInWithGoogleStorageAccount, signOutStorageAccount, subscribeSupabaseAuth } from '@/db/client'
 import { useGoogleCalendar } from '@/hooks/useGoogleCalendar'
 
 type ScheduleKind = 'major' | 'general'
@@ -626,7 +626,7 @@ export default function Home() {
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
   const [activeFieldHelp, setActiveFieldHelp] = useState<'project-priority' | 'schedule-kind' | 'schedule-priority' | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
-  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
+  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -642,10 +642,16 @@ export default function Home() {
       setIsStorageAccountLoading(true)
 
       try {
-        const user = await getSupabaseSessionUser()
+        const session = await getSupabaseSession()
+        const user = session?.user ?? null
         if (!isMounted) return
 
-        setStorageAccountEmail(user?.is_anonymous ? '' : user?.email ?? user?.user_metadata?.email ?? '')
+        const nextEmail = user?.is_anonymous ? '' : user?.email ?? user?.user_metadata?.email ?? ''
+        setStorageAccountEmail(nextEmail)
+
+        if (session?.provider_token) {
+          connectWithAccessToken(session.provider_token, nextEmail)
+        }
       } catch {
         if (!isMounted) return
 
@@ -662,7 +668,11 @@ export default function Home() {
     const {
       data: { subscription },
     } = subscribeSupabaseAuth((_event, session) => {
-      setStorageAccountEmail(session?.user?.is_anonymous ? '' : session?.user?.email ?? session?.user?.user_metadata?.email ?? '')
+      const nextEmail = session?.user?.is_anonymous ? '' : session?.user?.email ?? session?.user?.user_metadata?.email ?? ''
+      setStorageAccountEmail(nextEmail)
+      if (session?.provider_token) {
+        connectWithAccessToken(session.provider_token, nextEmail)
+      }
       setStorageIdentityVersion((current) => current + 1)
     })
 
@@ -670,7 +680,7 @@ export default function Home() {
       isMounted = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [connectWithAccessToken])
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
@@ -1860,46 +1870,60 @@ export default function Home() {
           <Card padding="lg" className="border-transparent bg-white shadow-m">
               <div className={tabContentInsetClassName}>
               <div aria-hidden className={tabContentLeadSpacerClassName} />
-              {isSupabaseConfigured && (
-                  <div className="space-y-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="space-y-2">
-                          <Text variant="body24" color="text-fg-primary">앱 저장 계정</Text>
+              {(isSupabaseConfigured || googleClientId) ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-3">
+                      <Text variant="body24" color="text-fg-primary">구글 계정 연동</Text>
+                      <div className="space-y-2">
+                        {isSupabaseConfigured && (
                           <Text variant="detail20" color="text-fg-secondary">
-                            {storageAccountEmail
-                              ? `${storageAccountEmail} 계정으로 저장 데이터를 불러오고 있습니다.`
-                              : '구글 계정으로 로그인하면 다른 기기에서도 같은 프로젝트와 일정을 이어서 볼 수 있습니다.'}
+                            앱 저장: {storageAccountEmail ? `${storageAccountEmail} 계정으로 저장 데이터를 불러오고 있습니다.` : '아직 연결되지 않았습니다.'}
                           </Text>
-                        </div>
-                        {storageAccountEmail ? (
+                        )}
+                        {googleClientId && (
+                          <Text variant="detail20" color="text-fg-secondary">
+                            캘린더 연동: {isConnected ? `${googleEmail || '연결된 계정'}으로 로그인되어 있습니다.` : '아직 연결되지 않았습니다.'}
+                          </Text>
+                        )}
+                        {!googleClientId && (
+                          <Text variant="detail20" color="text-fg-secondary">`NEXT_PUBLIC_GOOGLE_CLIENT_ID`를 설정하면 구글 계정 로그인과 캘린더 직접 저장 기능을 사용할 수 있습니다.</Text>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      {isSupabaseConfigured && (
+                        storageAccountEmail ? (
                           <Button variant="outlineDark" size="sm" shape="round" loading={isStorageAccountLoading} onClick={() => void disconnectStorageAccount()}>
-                            연결 해제
+                            앱 저장 연결 해제
                           </Button>
                         ) : (
                           <Button variant="primary" size="sm" shape="round" loading={isStorageAccountLoading} onClick={() => void connectStorageAccount()}>
-                            앱 계정 로그인
+                            앱 저장 로그인
                           </Button>
-                        )}
-                      </div>
+                        )
+                      )}
+                      {googleClientId && (
+                        isConnected ? (
+                          <>
+                            <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>캘린더 연동 해제</Button>
+                          </>
+                        ) : (
+                          <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>
+                            캘린더 로그인
+                          </Button>
+                        )
+                      )}
+                    </div>
                   </div>
-                )}
-              {googleClientId ? (
-                  <div className="space-y-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="space-y-2"><Text variant="body24" color="text-fg-primary">구글 계정 연동</Text><Text variant="detail20" color="text-fg-secondary">{isConnected ? `${googleEmail || '연결된 계정'}으로 로그인되어 있습니다. 저장할 캘린더를 직접 고를 수 있어요.` : '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.'}</Text></div>
-                        {isConnected ? (
-                          <div className="flex flex-col gap-2">
-                            <Button variant="primary" size="sm" shape="round" disabled={!calendarViewUrl} onClick={() => calendarViewUrl && openGoogleCalendar(calendarViewUrl)}>캘린더 크게 열기</Button>
-                            <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>연결 해제</Button>
-                          </div>
-                        ) : <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>구글 로그인</Button>}
-                      </div>
-                      {isConnected && <label className="block max-w-[720px] space-y-3"><Text variant="detail20" color="text-fg-tertiary">저장할 캘린더 선택</Text><select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' (기본)' : ''}</option>)}</select></label>}
-                      {isConnected && isCalendarsLoading && <Text variant="detail20" color="text-fg-secondary">캘린더 목록을 불러오는 중입니다.</Text>}
-                  </div>
-                ) : (
+
+                  {googleClientId && isConnected && <label className="block max-w-[720px] space-y-3"><Text variant="detail20" color="text-fg-tertiary">저장할 캘린더 선택</Text><select value={selectedCalendarId} onChange={(event) => setSelectedCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? ' (기본)' : ''}</option>)}</select></label>}
+                  {googleClientId && isConnected && isCalendarsLoading && <Text variant="detail20" color="text-fg-secondary">캘린더 목록을 불러오는 중입니다.</Text>}
+                </div>
+              ) : (
                   <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s"><Text variant="detail20" color="text-fg-secondary">`NEXT_PUBLIC_GOOGLE_CLIENT_ID`를 설정하면 구글 계정 로그인과 캘린더 직접 저장 기능을 사용할 수 있습니다.</Text></Card>
-                )}
+              )}
               {!isConnected && <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">열어볼 캘린더 ID 또는 이메일</Text><input value={calendarId} onChange={(event) => setCalendarId(event.target.value)} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="example@group.calendar.google.com" /></label>}
             </div>
           </Card>

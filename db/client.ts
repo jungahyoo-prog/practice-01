@@ -2,6 +2,7 @@
 
 import { createClient, type AuthChangeEvent, type Session, type SupabaseClient, type User } from '@supabase/supabase-js'
 import type { Database } from '@/db/types/database'
+import { googleCalendarScope } from '@/services/googleCalendar'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -29,6 +30,11 @@ export function getSupabaseBrowserClient() {
 }
 
 export async function getSupabaseSessionUser() {
+  const session = await getSupabaseSession()
+  return session?.user ?? null
+}
+
+export async function getSupabaseSession() {
   const supabase = getSupabaseBrowserClient()
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
@@ -36,7 +42,7 @@ export async function getSupabaseSessionUser() {
     throw sessionError
   }
 
-  return sessionData.session?.user ?? null
+  return sessionData.session ?? null
 }
 
 export async function requireSupabaseStorageAccount(): Promise<User> {
@@ -57,7 +63,11 @@ export async function signInWithGoogleStorageAccount() {
     provider: 'google',
     options: {
       redirectTo,
-      scopes: 'openid email profile',
+      scopes: googleCalendarScope,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+      },
     },
   })
 

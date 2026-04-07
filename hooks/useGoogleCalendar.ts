@@ -18,6 +18,7 @@ type GoogleAuthResult =
 export function useGoogleCalendar(isScriptReady: boolean) {
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
   const [accessToken, setAccessToken] = useState('')
+  const [tokenSource, setTokenSource] = useState<'gis' | 'supabase' | null>(null)
   const [isAuthorizing, setIsAuthorizing] = useState(false)
   const [isCalendarsLoading, setIsCalendarsLoading] = useState(false)
   const [isEventsLoading, setIsEventsLoading] = useState(false)
@@ -62,6 +63,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
         if (response.access_token) {
           setAuthError('')
           setAccessToken(response.access_token)
+          setTokenSource('gis')
         } else {
           setAuthError('?좏겙??諛쏆? 紐삵뻽?듬땲??')
         }
@@ -137,12 +139,24 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     }
   }
 
+  const connectWithAccessToken = useCallback((nextAccessToken: string, emailHint?: string) => {
+    if (!nextAccessToken) return
+
+    setAuthError('')
+    setAccessToken(nextAccessToken)
+    setTokenSource('supabase')
+    if (emailHint) {
+      setGoogleEmail(emailHint)
+    }
+  }, [])
+
   const disconnect = () => {
-    if (accessToken && window.google?.accounts?.oauth2) {
+    if (tokenSource === 'gis' && accessToken && window.google?.accounts?.oauth2) {
       window.google.accounts.oauth2.revoke(accessToken)
     }
 
     setAccessToken('')
+    setTokenSource(null)
     setCalendars([])
     setSelectedCalendarId('')
     setGoogleEmail('')
@@ -183,6 +197,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     events,
     googleClientId,
     googleEmail,
+    connectWithAccessToken,
     authError,
     isAuthorizing,
     isCalendarsLoading,
