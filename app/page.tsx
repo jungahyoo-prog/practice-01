@@ -2238,9 +2238,21 @@ export default function Home() {
               <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
             </button>
             {isLocalStorageProvider ? (
-              <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s">
-                <Text variant="detail20" color="text-fg-primary">로컬 SQLite 저장</Text>
-              </button>
+              googleClientId ? (
+                isConnected ? (
+                  <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => activeTab === 'calendar' ? undefined : confirmDiscardDraft(() => setActiveTab('calendar'))}>
+                    <Text variant="detail20" color="text-fg-primary">{googleEmail || '캘린더 연결됨'}</Text>
+                  </button>
+                ) : (
+                  <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>
+                    캘린더 로그인
+                  </Button>
+                )
+              ) : (
+                <Button variant="primary" size="sm" shape="round" disabled>
+                  캘린더 로그인
+                </Button>
+              )
             ) : storageAccountEmail ? (
               <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => activeTab === 'calendar' ? undefined : confirmDiscardDraft(() => setActiveTab('calendar'))}>
                 <Text variant="detail20" color="text-fg-primary">{storageAccountEmail}</Text>
@@ -2284,7 +2296,7 @@ export default function Home() {
               <Text variant="detail20" color="text-red-700">{storageError}</Text>
             </Card>
           )}
-          {!isStorageBootstrapping && !storageError && (
+          {!isStorageBootstrapping && (
             <Card padding="md" className="border-transparent bg-white shadow-s">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <Text variant="detail20" color="text-fg-secondary">

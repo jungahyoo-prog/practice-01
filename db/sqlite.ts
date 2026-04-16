@@ -441,11 +441,13 @@ export async function exportLocalDashboardDatabase() {
 }
 
 export async function importLocalDashboardDatabase(bytes: Uint8Array) {
-  const SQL = await getSqlJs()
-  const importedDatabase = new SQL.Database(bytes)
+  await runWrite(async () => {
+    const SQL = await getSqlJs()
+    const importedDatabase = new SQL.Database(bytes)
 
-  importedDatabase.exec(schemaSql)
-  await persistDatabaseBytes(importedDatabase.export())
+    importedDatabase.exec(schemaSql)
+    databasePromise = Promise.resolve(importedDatabase)
 
-  databasePromise = Promise.resolve(importedDatabase)
+    return importedDatabase
+  })
 }
