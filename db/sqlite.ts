@@ -150,11 +150,13 @@ async function readPersistedDatabase() {
 }
 
 async function persistDatabase(database: SqlDatabase) {
+  await persistDatabaseBytes(database.export())
+}
+
+async function persistDatabaseBytes(payload: Uint8Array) {
   const indexedDb = await openIndexedDb()
 
   try {
-    const payload = database.export()
-
     await new Promise<void>((resolve, reject) => {
       const transaction = indexedDb.transaction(SQLITE_OBJECT_STORE_NAME, 'readwrite')
       const store = transaction.objectStore(SQLITE_OBJECT_STORE_NAME)
@@ -431,4 +433,19 @@ export async function deleteLocalDashboardSchedule(scheduleId: string) {
   await runWrite((database) => {
     database.run('DELETE FROM dashboard_schedules WHERE id = :id', { ':id': scheduleId })
   })
+}
+
+export async function exportLocalDashboardDatabase() {
+  const database = await getDatabase()
+  return database.export()
+}
+
+export async function importLocalDashboardDatabase(bytes: Uint8Array) {
+  const SQL = await getSqlJs()
+  const importedDatabase = new SQL.Database(bytes)
+
+  importedDatabase.exec(schemaSql)
+  await persistDatabaseBytes(importedDatabase.export())
+
+  databasePromise = Promise.resolve(importedDatabase)
 }

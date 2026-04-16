@@ -1,13 +1,14 @@
 ﻿'use client'
 
 import Script from 'next/script'
-import { ChangeEvent, useEffect, useMemo, useState } from 'react'
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
 import { Text } from '@/components/ui/Text'
 import { deleteDashboardProject, deleteDashboardSchedule, loadDashboardData, loadSupabaseDashboardData, saveDashboardProject, saveDashboardSchedule, seedDashboardData } from '@/db/dashboard'
 import { getSupabaseSession, getSupabaseSessionUser, isLocalStorageProvider, isStorageProviderReady, isSupabaseConfigured, isSupabaseStorageProvider, signInWithGoogleStorageAccount, signOutStorageAccount, storageProvider, subscribeSupabaseAuth } from '@/db/client'
+import { exportLocalDashboardDatabase, importLocalDashboardDatabase } from '@/db/sqlite'
 import { useGoogleCalendar } from '@/hooks/useGoogleCalendar'
 
 type ScheduleKind = 'major' | 'general'
@@ -602,6 +603,8 @@ export default function Home() {
   const [isPersistentStorageEnabled, setIsPersistentStorageEnabled] = useState(false)
   const [storageAccountEmail, setStorageAccountEmail] = useState('')
   const [isStorageAccountLoading, setIsStorageAccountLoading] = useState(false)
+  const [isLocalBackupLoading, setIsLocalBackupLoading] = useState(false)
+  const [isLocalRestoreLoading, setIsLocalRestoreLoading] = useState(false)
   const [storageIdentityVersion, setStorageIdentityVersion] = useState(0)
   const [calendarId, setCalendarId] = useState('jungah.yoo@dreamus.io')
   const [calendarFeedback, setCalendarFeedback] = useState<CalendarFeedback>({ tone: 'default', text: '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.' })
@@ -618,6 +621,7 @@ export default function Home() {
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
+  const localRestoreInputRef = useRef<HTMLInputElement | null>(null)
   const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
 
   useEffect(() => {
@@ -1152,6 +1156,73 @@ export default function Home() {
       setStorageError('앱 저장 계정 연결 해제에 실패했습니다. 잠시 후 다시 시도해 주세요.')
     } finally {
       setIsStorageAccountLoading(false)
+    }
+  }
+
+  const syncLocalRestoredData = async () => {
+    const nextData = await loadDashboardData()
+
+    setProjects(nextData.projects)
+    setSchedules(nextData.schedules)
+    setIsPersistentStorageEnabled(true)
+    setStorageError('')
+    setScheduleForm((current) => {
+      if (nextData.projects.some((project) => project.id === current.projectId)) {
+        return current
+      }
+
+      return defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey)
+    })
+  }
+
+  const backupLocalDatabase = async () => {
+    if (!isLocalStorageProvider || typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      setIsLocalBackupLoading(true)
+      const bytes = await exportLocalDashboardDatabase()
+      const normalizedBytes = Uint8Array.from(bytes)
+      const blob = new Blob([normalizedBytes], { type: 'application/vnd.sqlite3' })
+      const url = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+
+      anchor.href = url
+      anchor.download = `dashboard-backup-${stamp}.sqlite`
+      anchor.click()
+      window.URL.revokeObjectURL(url)
+      setStorageError('')
+    } catch {
+      setStorageError('로컬 SQLite 백업 파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.')
+    } finally {
+      setIsLocalBackupLoading(false)
+    }
+  }
+
+  const triggerLocalRestore = () => {
+    localRestoreInputRef.current?.click()
+  }
+
+  const restoreLocalDatabase = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) {
+      return
+    }
+
+    try {
+      setIsLocalRestoreLoading(true)
+      const bytes = new Uint8Array(await file.arrayBuffer())
+
+      await importLocalDashboardDatabase(bytes)
+      await syncLocalRestoredData()
+    } catch {
+      setStorageError('선택한 파일을 로컬 SQLite 백업으로 복원하지 못했습니다. 올바른 `.sqlite` 파일인지 확인해 주세요.')
+    } finally {
+      setIsLocalRestoreLoading(false)
     }
   }
 
@@ -2215,9 +2286,22 @@ export default function Home() {
           )}
           {!isStorageBootstrapping && !storageError && (
             <Card padding="md" className="border-transparent bg-white shadow-s">
-              <Text variant="detail20" color="text-fg-secondary">
-                현재 저장소: {storageProvider === 'LOCAL' ? '로컬 SQLite' : 'Supabase'}
-              </Text>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <Text variant="detail20" color="text-fg-secondary">
+                  현재 저장소: {storageProvider === 'LOCAL' ? '로컬 SQLite' : 'Supabase'}
+                </Text>
+                {isLocalStorageProvider && (
+                  <div className="flex flex-wrap gap-3">
+                    <input ref={localRestoreInputRef} type="file" accept=".sqlite,application/vnd.sqlite3,application/octet-stream" className="hidden" onChange={(event) => void restoreLocalDatabase(event)} />
+                    <Button variant="outlineDark" size="sm" shape="round" loading={isLocalBackupLoading} onClick={() => void backupLocalDatabase()}>
+                      백업 다운로드
+                    </Button>
+                    <Button variant="outlineDark" size="sm" shape="round" loading={isLocalRestoreLoading} onClick={triggerLocalRestore}>
+                      백업 복원
+                    </Button>
+                  </div>
+                )}
+              </div>
             </Card>
           )}
           <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => activeTab === tab.key ? undefined : confirmDiscardDraft(() => setActiveTab(tab.key))}>{tab.label}</Button>)}</div></Card>
