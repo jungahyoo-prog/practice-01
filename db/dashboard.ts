@@ -1,6 +1,7 @@
 'use client'
 
-import { getSupabaseBrowserClient, requireSupabaseStorageAccount } from '@/db/client'
+import { getSupabaseBrowserClient, isLocalStorageProvider, requireSupabaseStorageAccount } from '@/db/client'
+import { deleteLocalDashboardProject, deleteLocalDashboardSchedule, loadLocalDashboardData, saveLocalDashboardProject, saveLocalDashboardSchedule, seedLocalDashboardData } from '@/db/sqlite'
 import type { Database } from '@/db/types/database'
 
 export type DashboardPriority = '최우선' | '높음' | '보통'
@@ -93,14 +94,26 @@ async function fetchSchedules() {
   return (data ?? []).map(mapScheduleRow)
 }
 
-export async function loadDashboardData() {
+export async function loadSupabaseDashboardData() {
   await requireSupabaseStorageAccount()
   const [projects, schedules] = await Promise.all([fetchProjects(), fetchSchedules()])
 
   return { projects, schedules }
 }
 
+export async function loadDashboardData() {
+  if (isLocalStorageProvider) {
+    return loadLocalDashboardData()
+  }
+
+  return loadSupabaseDashboardData()
+}
+
 export async function seedDashboardData(projects: DashboardProject[], schedules: DashboardSchedule[]) {
+  if (isLocalStorageProvider) {
+    return seedLocalDashboardData(projects, schedules)
+  }
+
   const supabase = getSupabaseBrowserClient()
   const user = await requireSupabaseStorageAccount()
   const scopedProjectIdMap = new Map(projects.map((project) => [project.id, buildScopedSeedId(user.id, project.id)]))
@@ -141,6 +154,10 @@ export async function seedDashboardData(projects: DashboardProject[], schedules:
 }
 
 export async function saveDashboardProject(project: DashboardProject) {
+  if (isLocalStorageProvider) {
+    return saveLocalDashboardProject(project)
+  }
+
   const supabase = getSupabaseBrowserClient()
   const user = await requireSupabaseStorageAccount()
 
@@ -167,6 +184,10 @@ export async function saveDashboardProject(project: DashboardProject) {
 }
 
 export async function saveDashboardSchedule(schedule: DashboardSchedule) {
+  if (isLocalStorageProvider) {
+    return saveLocalDashboardSchedule(schedule)
+  }
+
   const supabase = getSupabaseBrowserClient()
   const user = await requireSupabaseStorageAccount()
 
@@ -197,6 +218,11 @@ export async function saveDashboardSchedule(schedule: DashboardSchedule) {
 }
 
 export async function deleteDashboardProject(projectId: string) {
+  if (isLocalStorageProvider) {
+    await deleteLocalDashboardProject(projectId)
+    return
+  }
+
   const supabase = getSupabaseBrowserClient()
   await requireSupabaseStorageAccount()
 
@@ -205,6 +231,11 @@ export async function deleteDashboardProject(projectId: string) {
 }
 
 export async function deleteDashboardSchedule(scheduleId: string) {
+  if (isLocalStorageProvider) {
+    await deleteLocalDashboardSchedule(scheduleId)
+    return
+  }
+
   const supabase = getSupabaseBrowserClient()
   await requireSupabaseStorageAccount()
 

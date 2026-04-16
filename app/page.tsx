@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
 import { Text } from '@/components/ui/Text'
-import { deleteDashboardProject, deleteDashboardSchedule, loadDashboardData, saveDashboardProject, saveDashboardSchedule, seedDashboardData } from '@/db/dashboard'
-import { getSupabaseSession, getSupabaseSessionUser, isSupabaseConfigured, signInWithGoogleStorageAccount, signOutStorageAccount, subscribeSupabaseAuth } from '@/db/client'
+import { deleteDashboardProject, deleteDashboardSchedule, loadDashboardData, loadSupabaseDashboardData, saveDashboardProject, saveDashboardSchedule, seedDashboardData } from '@/db/dashboard'
+import { getSupabaseSession, getSupabaseSessionUser, isLocalStorageProvider, isStorageProviderReady, isSupabaseConfigured, isSupabaseStorageProvider, signInWithGoogleStorageAccount, signOutStorageAccount, storageProvider, subscribeSupabaseAuth } from '@/db/client'
 import { useGoogleCalendar } from '@/hooks/useGoogleCalendar'
 
 type ScheduleKind = 'major' | 'general'
@@ -626,7 +626,7 @@ export default function Home() {
   }, [activeTab])
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return
+    if (!isSupabaseStorageProvider || !isSupabaseConfigured) return
 
     let isMounted = true
 
@@ -675,8 +675,6 @@ export default function Home() {
   }, [connectWithAccessToken])
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return
-
     let isMounted = true
 
     const bootstrapStorage = async () => {
@@ -684,6 +682,57 @@ export default function Home() {
       setStorageError('')
 
       try {
+        if (isLocalStorageProvider) {
+          let nextData = await loadDashboardData()
+
+          if (!nextData.projects.length && !nextData.schedules.length) {
+            try {
+              const supabaseUser = isSupabaseConfigured ? await getSupabaseSessionUser() : null
+
+              if (supabaseUser && !supabaseUser.is_anonymous) {
+                const remoteData = await loadSupabaseDashboardData()
+
+                if (remoteData.projects.length || remoteData.schedules.length) {
+                  nextData = await seedDashboardData(remoteData.projects, remoteData.schedules)
+                } else {
+                  nextData = await seedDashboardData(initialProjects, initialSchedules)
+                }
+              } else {
+                nextData = await seedDashboardData(initialProjects, initialSchedules)
+              }
+            } catch {
+              nextData = await seedDashboardData(initialProjects, initialSchedules)
+            }
+          }
+
+          if (!isMounted) return
+
+          setProjects(nextData.projects)
+          setSchedules(nextData.schedules)
+          setIsPersistentStorageEnabled(true)
+          setStorageAccountEmail('로컬 SQLite')
+          setScheduleForm((current) => {
+            if (nextData.projects.some((project) => project.id === current.projectId)) {
+              return current
+            }
+
+            return defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey)
+          })
+          setCustomRepeatConfig((current) => ({
+            ...current,
+            weeklyDays: [String(new Date(`${defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey).date}T00:00:00`).getDay())],
+          }))
+          return
+        }
+
+        if (!isSupabaseConfigured) {
+          if (!isMounted) return
+
+          setIsPersistentStorageEnabled(false)
+          setStorageError('저장소 설정이 올바르지 않습니다. `NEXT_PUBLIC_STORAGE_PROVIDER`와 Supabase 환경변수를 확인해 주세요.')
+          return
+        }
+
         const user = await getSupabaseSessionUser()
 
         if (!user || user.is_anonymous) {
@@ -727,7 +776,11 @@ export default function Home() {
       } catch {
         if (!isMounted) return
 
-        setStorageError('앱 저장 계정을 연결하지 못했습니다. 상단 로그인 버튼으로 다시 로그인해 주세요.')
+        setStorageError(
+          isLocalStorageProvider
+            ? '로컬 SQLite 저장소를 초기화하지 못했습니다. 새로고침 후 다시 시도해 주세요.'
+            : '앱 저장 계정을 연결하지 못했습니다. 상단 로그인 버튼으로 다시 로그인해 주세요.',
+        )
         setIsPersistentStorageEnabled(false)
       } finally {
         if (isMounted) {
@@ -1066,6 +1119,11 @@ export default function Home() {
   }
 
   const connectStorageAccount = async () => {
+    if (isLocalStorageProvider) {
+      setStorageError('현재는 로컬 SQLite 저장소를 사용 중입니다. Supabase를 쓰려면 `NEXT_PUBLIC_STORAGE_PROVIDER=SUPABASE`로 바꿔 주세요.')
+      return
+    }
+
     if (!isSupabaseConfigured) {
       setStorageError('Supabase 환경변수가 필요합니다. 저장 기능 설정을 먼저 확인해 주세요.')
       return
@@ -1082,6 +1140,10 @@ export default function Home() {
   }
 
   const disconnectStorageAccount = async () => {
+    if (!isSupabaseStorageProvider) {
+      return
+    }
+
     try {
       setIsStorageAccountLoading(true)
       await signOutStorageAccount()
@@ -1954,13 +2016,18 @@ export default function Home() {
           <Card padding="lg" className="border-transparent bg-white pt-4 shadow-m">
               <div className={tabContentInsetClassName}>
               <div aria-hidden className={tabContentLeadSpacerClassName} />
-              {(isSupabaseConfigured || googleClientId) ? (
+              {(isStorageProviderReady || googleClientId) ? (
                 <div className="space-y-4">
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div className="space-y-3">
                       <Text variant="body24" color="text-fg-primary">구글 계정 연동</Text>
                       <div className="space-y-2">
-                        {isSupabaseConfigured && (
+                        {isLocalStorageProvider && (
+                          <Text variant="detail20" color="text-fg-secondary">
+                            앱 저장: 이 기기의 로컬 SQLite 저장소를 사용 중입니다.
+                          </Text>
+                        )}
+                        {isSupabaseStorageProvider && isSupabaseConfigured && (
                           <Text variant="detail20" color="text-fg-secondary">
                             앱 저장: {storageAccountEmail ? `${storageAccountEmail} 계정으로 저장 데이터를 불러오고 있습니다.` : '아직 연결되지 않았습니다.'}
                           </Text>
@@ -1977,7 +2044,7 @@ export default function Home() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      {isSupabaseConfigured && (
+                      {isSupabaseStorageProvider && isSupabaseConfigured && (
                         storageAccountEmail ? (
                           <Button variant="outlineDark" size="sm" shape="round" loading={isStorageAccountLoading} onClick={() => void disconnectStorageAccount()}>
                             앱 저장 연결 해제
@@ -2099,7 +2166,11 @@ export default function Home() {
             <button type="button" onClick={goToDashboardHome} className="text-left">
               <Text variant="dashboardLabel" color="text-black">업무 대시보드</Text>
             </button>
-            {storageAccountEmail ? (
+            {isLocalStorageProvider ? (
+              <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s">
+                <Text variant="detail20" color="text-fg-primary">로컬 SQLite 저장</Text>
+              </button>
+            ) : storageAccountEmail ? (
               <button type="button" className="rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-left shadow-s transition hover:bg-surface-primary" onClick={() => activeTab === 'calendar' ? undefined : confirmDiscardDraft(() => setActiveTab('calendar'))}>
                 <Text variant="detail20" color="text-fg-primary">{storageAccountEmail}</Text>
               </button>
@@ -2140,6 +2211,13 @@ export default function Home() {
           {!isStorageBootstrapping && storageError && (
             <Card padding="md" className="border-transparent bg-red-50 shadow-s">
               <Text variant="detail20" color="text-red-700">{storageError}</Text>
+            </Card>
+          )}
+          {!isStorageBootstrapping && !storageError && (
+            <Card padding="md" className="border-transparent bg-white shadow-s">
+              <Text variant="detail20" color="text-fg-secondary">
+                현재 저장소: {storageProvider === 'LOCAL' ? '로컬 SQLite' : 'Supabase'}
+              </Text>
             </Card>
           )}
           <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => activeTab === tab.key ? undefined : confirmDiscardDraft(() => setActiveTab(tab.key))}>{tab.label}</Button>)}</div></Card>

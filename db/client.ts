@@ -6,10 +6,25 @@ import { googleCalendarScope } from '@/services/googleCalendar'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const rawStorageProvider = process.env.NEXT_PUBLIC_STORAGE_PROVIDER?.trim().toUpperCase()
 
 let browserClient: SupabaseClient<Database> | null = null
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
+export type StorageProvider = 'SUPABASE' | 'LOCAL'
+
+function resolveStorageProvider(): StorageProvider {
+  if (rawStorageProvider === 'LOCAL' || rawStorageProvider === 'SUPABASE') {
+    return rawStorageProvider
+  }
+
+  return isSupabaseConfigured ? 'SUPABASE' : 'LOCAL'
+}
+
+export const storageProvider = resolveStorageProvider()
+export const isSupabaseStorageProvider = storageProvider === 'SUPABASE'
+export const isLocalStorageProvider = storageProvider === 'LOCAL'
+export const isStorageProviderReady = isLocalStorageProvider || isSupabaseConfigured
 
 export function getSupabaseBrowserClient() {
   if (!supabaseUrl || !supabaseKey) {
