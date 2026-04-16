@@ -72,7 +72,7 @@ export async function requireSupabaseStorageAccount(): Promise<User> {
 
 export async function signInWithGoogleStorageAccount() {
   const supabase = getSupabaseBrowserClient()
-  const redirectTo = typeof window !== 'undefined' ? window.location.href : undefined
+  const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/` : undefined
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',

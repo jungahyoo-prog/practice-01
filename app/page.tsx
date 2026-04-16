@@ -623,6 +623,13 @@ export default function Home() {
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
   const localRestoreInputRef = useRef<HTMLInputElement | null>(null)
   const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
+  const prefersRedirectCalendarLogin = useMemo(() => {
+    if (!isSupabaseConfigured || typeof navigator === 'undefined') {
+      return false
+    }
+
+    return /electron/i.test(navigator.userAgent)
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -630,7 +637,7 @@ export default function Home() {
   }, [activeTab])
 
   useEffect(() => {
-    if (!isSupabaseStorageProvider || !isSupabaseConfigured) return
+    if (!isSupabaseConfigured) return
 
     let isMounted = true
 
@@ -643,7 +650,7 @@ export default function Home() {
         if (!isMounted) return
 
         const nextEmail = user?.is_anonymous ? '' : user?.email ?? user?.user_metadata?.email ?? ''
-        setStorageAccountEmail(nextEmail)
+        setStorageAccountEmail(isSupabaseStorageProvider ? nextEmail : '')
 
         if (session?.provider_token) {
           connectWithAccessToken(session.provider_token, nextEmail)
@@ -665,18 +672,20 @@ export default function Home() {
       data: { subscription },
     } = subscribeSupabaseAuth((_event, session) => {
       const nextEmail = session?.user?.is_anonymous ? '' : session?.user?.email ?? session?.user?.user_metadata?.email ?? ''
-      setStorageAccountEmail(nextEmail)
+      setStorageAccountEmail(isSupabaseStorageProvider ? nextEmail : '')
       if (session?.provider_token) {
         connectWithAccessToken(session.provider_token, nextEmail)
       }
-      setStorageIdentityVersion((current) => current + 1)
+      if (isSupabaseStorageProvider) {
+        setStorageIdentityVersion((current) => current + 1)
+      }
     })
 
     return () => {
       isMounted = false
       subscription.unsubscribe()
     }
-  }, [connectWithAccessToken])
+  }, [connectWithAccessToken, isSupabaseStorageProvider])
 
   useEffect(() => {
     let isMounted = true
@@ -1114,12 +1123,34 @@ export default function Home() {
   }
 
   const connectGoogleCalendar = async () => {
+    if (prefersRedirectCalendarLogin) {
+      try {
+        setCalendarFeedback({ tone: 'default', text: '구글 로그인 페이지로 이동합니다. 승인이 끝나면 앱으로 다시 돌아와 캘린더 연결이 완료됩니다.' })
+        await signInWithGoogleStorageAccount()
+      } catch {
+        setCalendarFeedback({ tone: 'error', text: '구글 로그인 페이지로 이동하지 못했습니다. 잠시 후 다시 시도해 주세요.' })
+      }
+      return
+    }
+
     const result = await authorize()
     if (!result.success) {
       setCalendarFeedback({ tone: 'error', text: result.reason === 'missing-client-id' ? '구글 로그인을 사용하려면 NEXT_PUBLIC_GOOGLE_CLIENT_ID 환경변수가 필요합니다.' : '구글 로그인 창을 준비하지 못했습니다. 새로고침 후 다시 시도해 주세요.' })
       return
     }
     setCalendarFeedback({ tone: 'default', text: '구글 로그인 창이 열렸습니다. 권한을 승인하면 캘린더 목록이 자동으로 표시됩니다.' })
+  }
+
+  const disconnectGoogleCalendar = async () => {
+    disconnect()
+
+    if (isLocalStorageProvider && isSupabaseConfigured) {
+      try {
+        await signOutStorageAccount()
+      } catch {
+        // Ignore sign-out failures here and keep the local calendar state cleared.
+      }
+    }
   }
 
   const connectStorageAccount = async () => {
@@ -2129,12 +2160,12 @@ export default function Home() {
                       {googleClientId && (
                         isConnected ? (
                           <>
-                            <Button variant="outlineDark" size="sm" shape="round" onClick={disconnect}>캘린더 연동 해제</Button>
+                            <Button variant="outlineDark" size="sm" shape="round" onClick={() => void disconnectGoogleCalendar()}>캘린더 연동 해제</Button>
                           </>
                         ) : (
-                          <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>
-                            캘린더 로그인
-                          </Button>
+                  <Button variant="primary" size="sm" shape="round" loading={isAuthorizing || isStorageAccountLoading} onClick={() => void connectGoogleCalendar()}>
+                    캘린더 로그인
+                  </Button>
                         )
                       )}
                     </div>
@@ -2244,7 +2275,7 @@ export default function Home() {
                     <Text variant="detail20" color="text-fg-primary">{googleEmail || '캘린더 연결됨'}</Text>
                   </button>
                 ) : (
-                  <Button variant="primary" size="sm" shape="round" loading={isAuthorizing} onClick={() => void connectGoogleCalendar()}>
+                  <Button variant="primary" size="sm" shape="round" loading={isAuthorizing || isStorageAccountLoading} onClick={() => void connectGoogleCalendar()}>
                     캘린더 로그인
                   </Button>
                 )
