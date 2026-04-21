@@ -20,6 +20,8 @@
     "desktop:web": "set NEXT_PUBLIC_FLO_ENV=dev&& next build --no-lint",
     "desktop:start": "npm run desktop:web && electron .",
     "desktop:dist": "npm run desktop:web && electron-builder --win nsis",
+    "desktop:web:mac": "NEXT_PUBLIC_FLO_ENV=dev next build --no-lint",
+    "desktop:dist:mac": "npm run desktop:web:mac && electron-builder --mac dmg zip",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
@@ -83,6 +85,15 @@
         "nsis"
       ],
       "artifactName": "업무-대시보드-설치-${version}.${ext}"
+    },
+    "mac": {
+      "identity": null,
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "업무-대시보드-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
