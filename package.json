@@ -22,12 +22,18 @@
     "desktop:dist": "npm run desktop:web && electron-builder --win nsis",
     "desktop:web:mac": "NEXT_PUBLIC_FLO_ENV=dev next build --no-lint",
     "desktop:dist:mac": "npm run desktop:web:mac && electron-builder --mac dmg zip --publish never",
+    "android:web": "NEXT_PUBLIC_FLO_ENV=dev next build --no-lint",
+    "android:sync": "npm run android:web && npx cap sync android",
+    "android:build:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "container:build": "bash container-build.sh"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
     "@supabase/supabase-js": "^2.101.1",
     "axios": "^1.13.6",
     "crypto-js": "^4.2.0",

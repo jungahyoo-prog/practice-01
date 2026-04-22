@@ -1,0 +1,70 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - app/**
+      - components/**
+      - constants/**
+      - db/**
+      - hooks/**
+      - public/**
+      - services/**
+      - store/**
+      - types/**
+      - utils/**
+      - android/**
+      - capacitor.config.ts
+      - next.config.mjs
+      - package.json
+      - package-lock.json
+      - .github/workflows/build-android.yml
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_FLO_ENV: dev
+      NEXT_PUBLIC_STORAGE_PROVIDER: LOCAL
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Gradle wrapper
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        run: npm run android:build:debug
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-dashboard-android-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

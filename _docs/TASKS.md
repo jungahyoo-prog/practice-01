@@ -1000,3 +1000,13 @@
 - [x] GitHub Actions에서 macOS 빌드를 실행하도록 워크플로우를 추가한다
 - [x] 빌드 결과물을 GitHub Actions artifact로 내려받을 수 있게 연결한다
 
+
+### [F111] Android APK 빌드 자동화
+> **Status**: ✅ 완료
+> **목표**: 사용자가 GitHub Actions에서 Android용 `업무 대시보드` APK 파일을 내려받아 설치할 수 있도록 한다.
+
+- [x] Capacitor 기반 Android 앱 설정을 추가한다
+- [x] 정적 export 결과물을 Android WebView 앱에 동기화한다
+- [x] GitHub Actions에서 debug APK를 빌드하도록 워크플로우를 추가한다
+- [x] 빌드 결과물을 Actions artifact로 내려받을 수 있게 연결한다
+
