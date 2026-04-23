@@ -8,6 +8,7 @@ import {
   fetchGoogleUserProfile,
   googleCalendarScope,
   type GoogleCalendarEventItem,
+  type GoogleCalendarEventsQuery,
   type GoogleCalendarItem,
 } from '@/services/googleCalendar'
 
@@ -31,7 +32,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
   const [tokenClient, setTokenClient] = useState<google.accounts.oauth2.TokenClient | null>(null)
 
   const refreshEvents = useCallback(
-    async (calendarId = selectedCalendarId) => {
+    async (calendarId = selectedCalendarId, query?: GoogleCalendarEventsQuery) => {
       if (!accessToken || !calendarId) {
         setEvents([])
         return [] as GoogleCalendarEventItem[]
@@ -40,7 +41,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
       setIsEventsLoading(true)
 
       try {
-        const nextEvents = await fetchGoogleCalendarEvents(accessToken, calendarId)
+        const nextEvents = await fetchGoogleCalendarEvents(accessToken, calendarId, query)
         setEvents(nextEvents)
         return nextEvents
       } catch {
@@ -51,6 +52,20 @@ export function useGoogleCalendar(isScriptReady: boolean) {
       }
     },
     [accessToken, selectedCalendarId],
+  )
+
+  const fetchEventsForRange = useCallback(
+    async (calendarId: string, query: GoogleCalendarEventsQuery) => {
+      if (!accessToken || !calendarId) return [] as GoogleCalendarEventItem[]
+
+      try {
+        return await fetchGoogleCalendarEvents(accessToken, calendarId, query)
+      } catch {
+        setAuthError('?醫뤾문??筌?꼶?????깆젟???븍뜄???? 筌륁궢六??щ빍??')
+        return [] as GoogleCalendarEventItem[]
+      }
+    },
+    [accessToken],
   )
 
   useEffect(() => {
@@ -208,6 +223,7 @@ export function useGoogleCalendar(isScriptReady: boolean) {
     selectedCalendarId,
     setSelectedCalendarId,
     addEventToCalendar,
+    fetchEventsForRange,
     refreshEvents,
   }
 }

@@ -28,6 +28,12 @@ export type GoogleCalendarEventItem = {
   }
 }
 
+export type GoogleCalendarEventsQuery = {
+  timeMin?: string
+  timeMax?: string
+  maxResults?: number
+}
+
 type CalendarEventPayload = {
   title: string
   date: string
@@ -47,12 +53,20 @@ const GOOGLE_CALENDAR_SCOPE = [
 
 export const googleCalendarScope = GOOGLE_CALENDAR_SCOPE
 
+const ALL_DAY_TIME_VALUE = 'all-day'
+
 function buildGoogleCalendarDescription(projectName?: string, memo?: string) {
   return [projectName ? `프로젝트: ${projectName}` : '', memo ?? ''].filter(Boolean).join('\n')
 }
 
 function buildDateTime(date: string, time: string) {
   return `${date}T${time}:00`
+}
+
+function getNextDateKey(date: string) {
+  const parsedDate = new Date(`${date}T00:00:00`)
+  parsedDate.setDate(parsedDate.getDate() + 1)
+  return `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`
 }
 
 function buildRecurringRule(date: string, repeatType?: CalendarEventPayload['repeatType'], repeatCustom?: string) {
@@ -98,13 +112,15 @@ export async function fetchGoogleUserProfile(accessToken: string) {
   return (await response.json()) as GoogleUserProfile
 }
 
-export async function fetchGoogleCalendarEvents(accessToken: string, calendarId: string) {
+export async function fetchGoogleCalendarEvents(accessToken: string, calendarId: string, query: GoogleCalendarEventsQuery = {}) {
+  const currentYearStart = new Date(new Date().getFullYear(), 0, 1).toISOString()
   const params = new URLSearchParams({
     singleEvents: 'true',
     orderBy: 'startTime',
-    maxResults: '20',
-    timeMin: new Date().toISOString(),
+    maxResults: String(query.maxResults ?? 2500),
+    timeMin: query.timeMin ?? currentYearStart,
   })
+  if (query.timeMax) params.set('timeMax', query.timeMax)
 
   const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -117,10 +133,25 @@ export async function fetchGoogleCalendarEvents(accessToken: string, calendarId:
 }
 
 export async function createGoogleCalendarEvent(accessToken: string, calendarId: string, payload: CalendarEventPayload) {
-  const startDateTime = new Date(buildDateTime(payload.date, payload.time))
-  const endDateTime = new Date(startDateTime)
-  endDateTime.setHours(endDateTime.getHours() + 1)
   const recurrence = buildRecurringRule(payload.date, payload.repeatType, payload.repeatCustom)
+  const isAllDay = payload.time === ALL_DAY_TIME_VALUE
+  const start = isAllDay
+    ? { date: payload.date }
+    : {
+        dateTime: new Date(buildDateTime(payload.date, payload.time)).toISOString(),
+        timeZone: 'Asia/Seoul',
+      }
+  const end = isAllDay
+    ? { date: getNextDateKey(payload.date) }
+    : (() => {
+        const startDateTime = new Date(buildDateTime(payload.date, payload.time))
+        const endDateTime = new Date(startDateTime)
+        endDateTime.setHours(endDateTime.getHours() + 1)
+        return {
+          dateTime: endDateTime.toISOString(),
+          timeZone: 'Asia/Seoul',
+        }
+      })()
 
   const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
     method: 'POST',
@@ -131,14 +162,8 @@ export async function createGoogleCalendarEvent(accessToken: string, calendarId:
     body: JSON.stringify({
       summary: payload.title,
       description: buildGoogleCalendarDescription(payload.projectName, payload.memo),
-      start: {
-        dateTime: startDateTime.toISOString(),
-        timeZone: 'Asia/Seoul',
-      },
-      end: {
-        dateTime: endDateTime.toISOString(),
-        timeZone: 'Asia/Seoul',
-      },
+      start,
+      end,
       recurrence: recurrence ? [recurrence] : undefined,
     }),
   })

@@ -90,7 +90,7 @@ type CustomRepeatConfig = {
   weeklyDays: string[]
 }
 
-const projectPeriodPresetLabels: Record<ProjectPeriodPreset, string> = {
+const _projectPeriodPresetLabels: Record<ProjectPeriodPreset, string> = {
   custom: '직접 입력',
   'half-1': '상반기',
   'half-2': '하반기',
@@ -143,8 +143,18 @@ const tabs: { key: DashboardTab; label: string }[] = [
 
 const tabContentInsetClassName = 'space-y-5'
 const tabContentLeadSpacerClassName = 'h-0'
+const allDayTimeValue = 'all-day'
 
 const timelineMonths = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
+const scheduleTimeOptions = [
+  { value: allDayTimeValue, label: '종일' },
+  ...Array.from({ length: 96 }, (_, index) => {
+    const hour = String(Math.floor(index / 4)).padStart(2, '0')
+    const minute = String((index % 4) * 15).padStart(2, '0')
+    const value = `${hour}:${minute}`
+    return { value, label: value }
+  }),
+]
 
 const priorityTone: Record<PriorityLevel, string> = {
   최우선: 'bg-red-300 text-red-900',
@@ -152,7 +162,7 @@ const priorityTone: Record<PriorityLevel, string> = {
   보통: 'bg-blue-50 text-blue-900',
 }
 
-const priorityAccent: Record<PriorityLevel, string> = {
+const _priorityAccent: Record<PriorityLevel, string> = {
   최우선: 'border-red-300 bg-red-300/15',
   높음: 'border-amber-300 bg-amber-300/15',
   보통: 'border-blue-50 bg-blue-50/50',
@@ -199,7 +209,7 @@ const defaultProjectForm = (): ProjectFormState => ({
   periodPreset: 'half-1',
 })
 
-const defaultScheduleForm = (projectId: string, baseDate = formatLocalDateKey(new Date())): ScheduleFormState => ({
+const defaultScheduleForm = (projectId = '', baseDate = formatLocalDateKey(new Date())): ScheduleFormState => ({
   projectId,
   title: '',
   date: baseDate,
@@ -221,15 +231,15 @@ function formatLocalDateKey(date: Date) {
 }
 
 function buildDateTimeValue(date: string, time: string) {
-  return `${date}T${time}`
+  return `${date}T${time === allDayTimeValue ? '00:00' : time}`
 }
 
 function formatDateLabel(date: string, time: string) {
   const parsedDate = new Date(`${date}T00:00:00`)
-  return `${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일 ${time}`
+  return `${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일 ${time === allDayTimeValue ? '종일' : time}`
 }
 
-function formatDuration(startMonth: number, endMonth: number) {
+function _formatDuration(startMonth: number, endMonth: number) {
   return `2026.${String(startMonth + 1).padStart(2, '0')} - 2026.${String(endMonth + 1).padStart(2, '0')}`
 }
 
@@ -346,14 +356,23 @@ function formatRepeatLabel(schedule: Pick<ScheduleItem, 'date' | 'repeatType' | 
 }
 
 function toGoogleCalendarDateTime(date: string, time: string) {
+  if (time === allDayTimeValue) return date.replaceAll('-', '')
   return `${date.replaceAll('-', '')}T${time.replace(':', '')}00`
 }
 
-function buildGoogleCalendarEventUrl(schedule: ScheduleItem, projectName?: string, calendarId?: string) {
+function _buildGoogleCalendarEventUrl(schedule: ScheduleItem, projectName?: string, calendarId?: string) {
   const start = toGoogleCalendarDateTime(schedule.date, schedule.time)
-  const endDateTime = new Date(`${schedule.date}T${schedule.time}:00`)
-  endDateTime.setHours(endDateTime.getHours() + 1)
-  const end = `${endDateTime.getFullYear()}${String(endDateTime.getMonth() + 1).padStart(2, '0')}${String(endDateTime.getDate()).padStart(2, '0')}T${String(endDateTime.getHours()).padStart(2, '0')}${String(endDateTime.getMinutes()).padStart(2, '0')}00`
+  const end = schedule.time === allDayTimeValue
+    ? (() => {
+        const endDate = new Date(`${schedule.date}T00:00:00`)
+        endDate.setDate(endDate.getDate() + 1)
+        return `${endDate.getFullYear()}${String(endDate.getMonth() + 1).padStart(2, '0')}${String(endDate.getDate()).padStart(2, '0')}`
+      })()
+    : (() => {
+        const endDateTime = new Date(`${schedule.date}T${schedule.time}:00`)
+        endDateTime.setHours(endDateTime.getHours() + 1)
+        return `${endDateTime.getFullYear()}${String(endDateTime.getMonth() + 1).padStart(2, '0')}${String(endDateTime.getDate()).padStart(2, '0')}T${String(endDateTime.getHours()).padStart(2, '0')}${String(endDateTime.getMinutes()).padStart(2, '0')}00`
+      })()
   const description = [projectName ? `프로젝트: ${projectName}` : '', schedule.memo].filter(Boolean).join('\n')
   const params = new URLSearchParams({ text: schedule.title, dates: `${start}/${end}`, details: description, location: '', ctz: 'Asia/Seoul' })
   if (calendarId) params.set('src', calendarId)
@@ -380,7 +399,7 @@ function parseGoogleEventDate(dateValue?: string, dateTimeValue?: string) {
   if (dateValue) {
     return {
       date: dateValue,
-      time: '09:00',
+      time: allDayTimeValue,
     }
   }
 
@@ -394,10 +413,25 @@ function hasMatchingGoogleCalendarEvent(
   events: Array<{ summary?: string; start?: { date?: string; dateTime?: string } }>,
   schedule: Pick<ScheduleItem, 'title' | 'date' | 'time'>,
 ) {
+  const normalizedScheduleTitle = schedule.title.trim().replace(/\s+/g, ' ').toLowerCase()
   return events.some((event) => {
     const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
-    return (event.summary ?? '').trim() === schedule.title.trim() && date === schedule.date && time === schedule.time
+    const normalizedEventTitle = (event.summary ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+    return normalizedEventTitle === normalizedScheduleTitle && date === schedule.date && time === schedule.time
   })
+}
+
+function buildScheduleCalendarLookupQuery(date: string) {
+  const start = new Date(`${date}T00:00:00`)
+  start.setDate(start.getDate() - 1)
+  const end = new Date(`${date}T00:00:00`)
+  end.setDate(end.getDate() + 2)
+
+  return {
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+    maxResults: 100,
+  }
 }
 
 function normalizeImportedCalendarDescription(description?: string) {
@@ -474,11 +508,11 @@ function TimelineTrack({
   )
 }
 
-function PriorityBadge({ priority }: { priority: PriorityLevel }) {
+function _PriorityBadge({ priority }: { priority: PriorityLevel }) {
   return <div className={`rounded-full px-3 py-2 ${priorityTone[priority]}`}><Text variant="detail20">{priority}</Text></div>
 }
 
-function ScheduleKindBadge({ kind }: { kind: ScheduleKind }) {
+function _ScheduleKindBadge({ kind }: { kind: ScheduleKind }) {
   return <div className={`rounded-full px-3 py-2 ${scheduleKindTone[kind]}`}><Text variant="detail20">{kind === 'major' ? '주요 일정' : '일반 일정'}</Text></div>
 }
 
@@ -547,10 +581,14 @@ function ProjectMetaBadge({ className, label, onClick }: { className: string; la
 function ProjectActionIconButton({
   label,
   onClick,
+  isActive = false,
+  disabled = false,
   children,
 }: {
   label: string
   onClick: () => void
+  isActive?: boolean
+  disabled?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -558,7 +596,12 @@ function ProjectActionIconButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-fg-tertiary transition hover:bg-black/5 hover:text-fg-primary"
+      disabled={disabled}
+      className={`flex h-7 w-7 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        isActive
+          ? 'border-red-400 bg-red-300/10 text-red-900 hover:bg-red-300/20'
+          : 'border-transparent bg-transparent text-fg-tertiary hover:bg-black/5 hover:text-fg-primary'
+      }`}
     >
       {children}
     </button>
@@ -607,22 +650,23 @@ export default function Home() {
   const [isLocalRestoreLoading, setIsLocalRestoreLoading] = useState(false)
   const [storageIdentityVersion, setStorageIdentityVersion] = useState(0)
   const [calendarId, setCalendarId] = useState('jungah.yoo@dreamus.io')
-  const [calendarFeedback, setCalendarFeedback] = useState<CalendarFeedback>({ tone: 'default', text: '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.' })
+  const [_calendarFeedback, setCalendarFeedback] = useState<CalendarFeedback>({ tone: 'default', text: '구글 계정을 연결하면 선택한 캘린더에 일정을 직접 저장할 수 있습니다.' })
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [projectForm, setProjectForm] = useState<ProjectFormState>(defaultProjectForm())
   const [isProjectPeriodMenuOpen, setIsProjectPeriodMenuOpen] = useState(false)
-  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm(initialProjects[0].id, todayKey))
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm('', todayKey))
   const [isCustomRepeatMenuOpen, setIsCustomRepeatMenuOpen] = useState(false)
-  const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${defaultScheduleForm(initialProjects[0].id, todayKey).date}T00:00:00`).getDay())] })
+  const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${todayKey}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
   const [projectViewFilters, setProjectViewFilters] = useState<ProjectViewFilters>({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })
   const [scheduleQuickFilter, setScheduleQuickFilter] = useState<ScheduleQuickFilter>('all')
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
+  const [calendarActionScheduleId, setCalendarActionScheduleId] = useState<string | null>(null)
   const localRestoreInputRef = useRef<HTMLInputElement | null>(null)
-  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
+  const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, fetchEventsForRange, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
   const prefersRedirectCalendarLogin = useMemo(() => {
     if (!isSupabaseConfigured || typeof navigator === 'undefined') {
       return false
@@ -729,11 +773,11 @@ export default function Home() {
               return current
             }
 
-            return defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey)
+            return defaultScheduleForm('', todayKey)
           })
           setCustomRepeatConfig((current) => ({
             ...current,
-            weeklyDays: [String(new Date(`${defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey).date}T00:00:00`).getDay())],
+            weeklyDays: [String(new Date(`${todayKey}T00:00:00`).getDay())],
           }))
           return
         }
@@ -759,7 +803,7 @@ export default function Home() {
               return current
             }
 
-            return defaultScheduleForm(initialProjects[0]?.id ?? '', todayKey)
+            return defaultScheduleForm('', todayKey)
           })
           return
         }
@@ -780,11 +824,11 @@ export default function Home() {
             return current
           }
 
-          return defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey)
+          return defaultScheduleForm('', todayKey)
         })
         setCustomRepeatConfig((current) => ({
           ...current,
-          weeklyDays: [String(new Date(`${defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey).date}T00:00:00`).getDay())],
+          weeklyDays: [String(new Date(`${todayKey}T00:00:00`).getDay())],
         }))
       } catch {
         if (!isMounted) return
@@ -811,13 +855,18 @@ export default function Home() {
 
   const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects])
   const sortedSchedules = useMemo(() => [...schedules].sort((a, b) => buildDateTimeValue(a.date, a.time).localeCompare(buildDateTimeValue(b.date, b.time))), [schedules])
-  const todaySchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date === todayKey).slice(0, 3), [sortedSchedules, todayKey])
-  const upcomingSchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date > todayKey).slice(0, 4), [sortedSchedules, todayKey])
+  const _todaySchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date === todayKey).slice(0, 3), [sortedSchedules, todayKey])
+  const _upcomingSchedules = useMemo(() => sortedSchedules.filter((schedule) => schedule.date > todayKey).slice(0, 4), [sortedSchedules, todayKey])
   const currentWeekRange = useMemo(() => getWeekDateRange(new Date()), [todayKey])
   const currentEditingProject = useMemo(() => projects.find((project) => project.id === editingProjectId) ?? null, [editingProjectId, projects])
   const currentEditingSchedule = useMemo(() => schedules.find((schedule) => schedule.id === editingScheduleId) ?? null, [editingScheduleId, schedules])
   const defaultProjectState = useMemo(() => defaultProjectForm(), [])
-  const defaultScheduleState = useMemo(() => defaultScheduleForm(projects[0]?.id ?? '', todayKey), [projects, todayKey])
+  const defaultScheduleState = useMemo(() => defaultScheduleForm('', todayKey), [todayKey])
+  const googleCalendarRegisteredScheduleIds = useMemo(() => {
+    if (!isConnected || !selectedCalendarId) return new Set<string>()
+
+    return new Set(schedules.filter((schedule) => hasMatchingGoogleCalendarEvent(events, schedule)).map((schedule) => schedule.id))
+  }, [events, isConnected, schedules, selectedCalendarId])
 
   const isProjectFormDirty = useMemo(() => {
     if (activeTab !== 'project-create') return false
@@ -892,7 +941,7 @@ export default function Home() {
     }
 
     if (isScheduleFormDirty) {
-      resetScheduleForm(scheduleForm.projectId)
+      resetScheduleForm()
     }
 
     onConfirm()
@@ -1055,7 +1104,7 @@ export default function Home() {
     ],
       [currentWeekRange.endDate, currentWeekRange.startDate, projects, schedules, todayKey],
     )
-  const scheduleProjectShortcutMessage = useMemo(() => {
+  const _scheduleProjectShortcutMessage = useMemo(() => {
     if (!scheduleProjectShortcutId) return ''
     const projectName = projects.find((project) => project.id === scheduleProjectShortcutId)?.name ?? '선택한 프로젝트'
     if (!scheduleFilters.startDate && !scheduleFilters.endDate) {
@@ -1070,7 +1119,7 @@ export default function Home() {
     }
     return `${projectName}의 금일 기준 잔여 일정만 보도록 필터가 적용되었습니다.`
   }, [projects, scheduleFilters.endDate, scheduleFilters.startDate, scheduleProjectShortcutId])
-  const scheduleQuickFilterMessage = useMemo(() => {
+  const _scheduleQuickFilterMessage = useMemo(() => {
     if (scheduleQuickFilter === 'major') return '요약 박스에서 잔여 주요 일정만 보도록 필터가 적용되었습니다.'
     if (scheduleQuickFilter === 'high-priority') return '요약 박스에서 높은 우선순위 일정만 보도록 필터가 적용되었습니다.'
     if (scheduleQuickFilter === 'today') return '요약 박스에서 오늘 전체 일정만 보도록 필터가 적용되었습니다.'
@@ -1116,9 +1165,9 @@ export default function Home() {
 
   const effectiveCalendarId = isConnected ? selectedCalendarId : calendarId
   const calendarEmbedUrl = effectiveCalendarId ? buildGoogleCalendarEmbedUrl(effectiveCalendarId) : ''
-  const calendarViewUrl = selectedCalendar?.htmlLink || (effectiveCalendarId ? buildGoogleCalendarViewUrl(effectiveCalendarId) : '')
+  const _calendarViewUrl = selectedCalendar?.htmlLink || (effectiveCalendarId ? buildGoogleCalendarViewUrl(effectiveCalendarId) : '')
 
-  const openGoogleCalendar = (url: string) => {
+  const _openGoogleCalendar = (url: string) => {
     if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
   }
 
@@ -1202,7 +1251,7 @@ export default function Home() {
         return current
       }
 
-      return defaultScheduleForm(nextData.projects[0]?.id ?? '', todayKey)
+      return defaultScheduleForm('', todayKey)
     })
   }
 
@@ -1258,39 +1307,44 @@ export default function Home() {
   }
 
   const handleAddScheduleToCalendar = async (schedule: ScheduleItem, projectName?: string) => {
+    if (calendarActionScheduleId === schedule.id) return
+
     const resolvedRepeatCustom =
       schedule.repeatType === 'custom' && !schedule.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, schedule.date) : schedule.repeatCustom
-    const resolvedRepeatCustomLabel =
-      schedule.repeatType === 'custom' && !schedule.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, schedule.date) : schedule.repeatCustomLabel
 
-        if (isConnected && selectedCalendarId) {
-          try {
-            const latestEvents = await refreshEvents(selectedCalendarId)
-            if (hasMatchingGoogleCalendarEvent(latestEvents, schedule)) {
-              if (typeof window !== 'undefined') {
-                window.alert('이미 등록되어 있는 일정입니다.')
-              }
-              setCalendarFeedback({ tone: 'default', text: '이미 선택한 구글 캘린더에 등록된 일정입니다.' })
-              return
-            }
+    if (isConnected && selectedCalendarId) {
+      setCalendarActionScheduleId(schedule.id)
 
-            await addEventToCalendar({
-            calendarId: selectedCalendarId,
-            title: schedule.title,
-            date: schedule.date,
+      try {
+        const latestEvents = await fetchEventsForRange(selectedCalendarId, buildScheduleCalendarLookupQuery(schedule.date))
+        if (hasMatchingGoogleCalendarEvent(latestEvents, schedule)) {
+          await refreshEvents(selectedCalendarId)
+          if (typeof window !== 'undefined') {
+            window.alert('이미 등록되어 있는 일정입니다.')
+          }
+          setCalendarFeedback({ tone: 'default', text: '이미 선택한 구글 캘린더에 등록된 일정입니다.' })
+          return
+        }
+
+        await addEventToCalendar({
+          calendarId: selectedCalendarId,
+          title: schedule.title,
+          date: schedule.date,
           time: schedule.time,
           repeatType: schedule.repeatType,
           repeatCustom: resolvedRepeatCustom,
           memo: schedule.memo,
-            projectName,
-          })
-          setCalendarFeedback({ tone: 'success', text: `선택한 캘린더${selectedCalendar?.summary ? `(${selectedCalendar.summary})` : ''}에 일정이 저장되었습니다.` })
-          if (typeof window !== 'undefined') {
-            window.alert('구글 캘린더 등록이 완료되었습니다.')
-          }
-        } catch {
-          setCalendarFeedback({ tone: 'error', text: '구글 캘린더 저장에 실패했습니다. 로그인 상태나 권한을 다시 확인해 주세요.' })
+          projectName,
+        })
+        setCalendarFeedback({ tone: 'success', text: `선택한 캘린더${selectedCalendar?.summary ? `(${selectedCalendar.summary})` : ''}에 일정이 저장되었습니다.` })
+        if (typeof window !== 'undefined') {
+          window.alert('구글 캘린더 등록이 완료되었습니다.')
         }
+      } catch {
+        setCalendarFeedback({ tone: 'error', text: '구글 캘린더 저장에 실패했습니다. 로그인 상태나 권한을 다시 확인해 주세요.' })
+      } finally {
+        setCalendarActionScheduleId(null)
+      }
       return
     }
 
@@ -1310,8 +1364,9 @@ export default function Home() {
     }
 
     try {
-      const latestEvents = await refreshEvents(selectedCalendarId)
+      const latestEvents = await fetchEventsForRange(selectedCalendarId, buildScheduleCalendarLookupQuery(schedule.date))
       if (hasMatchingGoogleCalendarEvent(latestEvents, schedule)) {
+        await refreshEvents(selectedCalendarId)
         if (typeof window !== 'undefined') {
           window.alert('이미 등록되어 있는 일정입니다.')
         }
@@ -1398,7 +1453,7 @@ export default function Home() {
       setEditingProjectId(null)
       setEditingScheduleId(null)
       setProjectForm(defaultProjectForm())
-      setScheduleForm(defaultScheduleForm(projects[0]?.id ?? '', todayKey))
+      setScheduleForm(defaultScheduleForm('', todayKey))
       setIsProjectPeriodMenuOpen(false)
       setIsCustomRepeatMenuOpen(false)
     })
@@ -1406,7 +1461,7 @@ export default function Home() {
   const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setCustomRepeatConfig((current) => ({ ...current, [field]: event.target.value }))
 
-  const handleProjectPeriodPresetChange = (event: ChangeEvent<HTMLSelectElement>) => {
+  const _handleProjectPeriodPresetChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const preset = event.target.value as ProjectPeriodPreset
     const range = buildProjectPeriodRange(preset)
 
@@ -1454,7 +1509,7 @@ export default function Home() {
 
   const resetScheduleForm = (projectId?: string) => {
     setEditingScheduleId(null)
-    setScheduleForm(defaultScheduleForm(projectId ?? projects[0]?.id ?? '', todayKey))
+    setScheduleForm(defaultScheduleForm(projectId ?? '', todayKey))
     setIsCustomRepeatMenuOpen(false)
   }
 
@@ -1485,12 +1540,18 @@ export default function Home() {
       setProjects((current) => (editingProjectId ? current.map((project) => (project.id === editingProjectId ? nextProject : project)) : [...current, nextProject]))
     }
 
-    if (!editingProjectId) setScheduleForm((current) => ({ ...current, projectId: nextProject.id }))
     setActiveTab('project-view')
     resetProjectForm()
   }
 
   const saveSchedule = async () => {
+    if (!scheduleForm.projectId) {
+      if (typeof window !== 'undefined') {
+        window.alert('연결 프로젝트를 선택해 주세요.')
+      }
+      return
+    }
+
     const resolvedRepeatCustom = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustom
     const resolvedRepeatCustomLabel = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustomLabel
 
@@ -1530,7 +1591,7 @@ export default function Home() {
       setScheduleFilters({ projectId: nextSchedule.projectId, startDate: '', endDate: '', priority: '', kind: '' })
       setHighlightedScheduleId(nextSchedule.id)
       setActiveTab('schedule-list')
-      resetScheduleForm(scheduleForm.projectId)
+      resetScheduleForm()
     }
 
   const editProject = (projectId: string) => {
@@ -1609,7 +1670,7 @@ export default function Home() {
     setProjects(remainingProjects)
     setSchedules((current) => current.filter((schedule) => schedule.projectId !== projectId))
     if (editingProjectId === projectId) resetProjectForm()
-    if (scheduleForm.projectId === projectId) resetScheduleForm(remainingProjects[0]?.id ?? '')
+    if (scheduleForm.projectId === projectId) resetScheduleForm()
   }
 
   const removeSchedule = async (scheduleId: string) => {
@@ -1626,7 +1687,7 @@ export default function Home() {
     }
 
     setSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId))
-    if (editingScheduleId === scheduleId) resetScheduleForm(scheduleForm.projectId)
+    if (editingScheduleId === scheduleId) resetScheduleForm()
   }
   const renderTabContent = () => {
     if (activeTab === 'project-view') {
@@ -1875,7 +1936,12 @@ export default function Home() {
                                   </Text>
                                 </button>
                               <div className="flex items-center gap-2">
-                                <ProjectActionIconButton label="구글 캘린더에 추가" onClick={() => void handleAddScheduleToCalendar(schedule, project?.name)}>
+                                <ProjectActionIconButton
+                                  label={googleCalendarRegisteredScheduleIds.has(schedule.id) ? '구글 캘린더에 등록된 일정' : '구글 캘린더에 추가'}
+                                  onClick={() => void handleAddScheduleToCalendar(schedule, project?.name)}
+                                  isActive={googleCalendarRegisteredScheduleIds.has(schedule.id)}
+                                  disabled={calendarActionScheduleId === schedule.id}
+                                >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="3" y="5" width="18" height="16" rx="2" />
                                     <path d="M16 3v4" />
@@ -2008,11 +2074,11 @@ export default function Home() {
             <div aria-hidden className={tabContentLeadSpacerClassName} />
             <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">일정 이름</Text><input value={scheduleForm.title} onChange={handleScheduleChange('title')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" placeholder="일정 이름을 입력해 주세요" /></label>
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">연결 프로젝트</Text><select value={scheduleForm.projectId} onChange={handleScheduleChange('projectId')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{projectOptions.map((project) => <option key={project.value} value={project.value}>{project.label}</option>)}</select></label>
+              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">연결 프로젝트</Text><select value={scheduleForm.projectId} onChange={handleScheduleChange('projectId')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"><option value="">선택</option>{projectOptions.map((project) => <option key={project.value} value={project.value}>{project.label}</option>)}</select></label>
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">날짜</Text><input type="date" value={scheduleForm.date} onChange={handleScheduleChange('date')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시간</Text><input type="time" value={scheduleForm.time} onChange={handleScheduleChange('time')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
+              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시간</Text><select value={scheduleForm.time} onChange={handleScheduleChange('time')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{scheduleTimeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">반복 여부</Text><select value={scheduleForm.repeatType} onChange={(event) => {
                 const nextValue = event.target.value as ScheduleRepeatType
                 if (nextValue === 'custom') {
@@ -2107,7 +2173,7 @@ export default function Home() {
                   </label>
                 </div>
               </div>
-            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" loading={isSavingEvent} onClick={() => void saveSchedule()}>{editingScheduleId ? '일정 수정 완료' : '일정 저장'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => resetScheduleForm(scheduleForm.projectId)}>입력 초기화</Button></div>
+            <div className="flex flex-wrap gap-3"><Button variant="primary" size="sm" shape="round" loading={isSavingEvent} onClick={() => void saveSchedule()}>{editingScheduleId ? '일정 수정 완료' : '일정 저장'}</Button><Button variant="outlineDark" size="sm" shape="round" onClick={() => resetScheduleForm()}>입력 초기화</Button></div>
           </div>
         </Card>
       )
