@@ -239,6 +239,37 @@ function formatDateLabel(date: string, time: string) {
   return `${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일 ${time === allDayTimeValue ? '종일' : time}`
 }
 
+function normalizeScheduleTimeInput(value: string) {
+  const trimmedValue = value.trim()
+  if (!trimmedValue) return ''
+  if (trimmedValue === '종일' || trimmedValue.toLowerCase() === allDayTimeValue) return allDayTimeValue
+
+  const colonMatch = trimmedValue.match(/^(\d{1,2}):(\d{1,2})$/)
+  if (colonMatch) {
+    const hour = Number(colonMatch[1])
+    const minute = Number(colonMatch[2])
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+    }
+  }
+
+  const digits = trimmedValue.replace(/\D/g, '')
+  if (digits.length >= 1 && digits.length <= 2) {
+    const hour = Number(digits)
+    if (hour >= 0 && hour <= 23) return `${String(hour).padStart(2, '0')}:00`
+  }
+
+  if (digits.length === 3 || digits.length === 4) {
+    const hour = Number(digits.slice(0, -2))
+    const minute = Number(digits.slice(-2))
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+    }
+  }
+
+  return ''
+}
+
 function _formatDuration(startMonth: number, endMonth: number) {
   return `2026.${String(startMonth + 1).padStart(2, '0')} - 2026.${String(endMonth + 1).padStart(2, '0')}`
 }
@@ -599,7 +630,7 @@ function ProjectActionIconButton({
       disabled={disabled}
       className={`flex h-7 w-7 items-center justify-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${
         isActive
-          ? 'border-red-400 bg-red-300/10 text-red-900 hover:bg-red-300/20'
+          ? 'border-transparent bg-transparent text-red-700 hover:text-red-800'
           : 'border-transparent bg-transparent text-fg-tertiary hover:bg-black/5 hover:text-fg-primary'
       }`}
     >
@@ -657,6 +688,7 @@ export default function Home() {
   const [isProjectPeriodMenuOpen, setIsProjectPeriodMenuOpen] = useState(false)
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(defaultScheduleForm('', todayKey))
   const [isCustomRepeatMenuOpen, setIsCustomRepeatMenuOpen] = useState(false)
+  const [isScheduleTimePickerOpen, setIsScheduleTimePickerOpen] = useState(false)
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig>({ interval: '1', frequency: 'WEEKLY', weeklyDays: [String(new Date(`${todayKey}T00:00:00`).getDay())] })
   const [scheduleFilters, setScheduleFilters] = useState<ScheduleFilters>({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
   const [projectViewFilters, setProjectViewFilters] = useState<ProjectViewFilters>({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })
@@ -867,6 +899,12 @@ export default function Home() {
 
     return new Set(schedules.filter((schedule) => hasMatchingGoogleCalendarEvent(events, schedule)).map((schedule) => schedule.id))
   }, [events, isConnected, schedules, selectedCalendarId])
+  const visibleScheduleTimeOptions = useMemo(() => {
+    if (scheduleTimeOptions.some((option) => option.value === scheduleForm.time)) return scheduleTimeOptions
+    if (!/^\d{2}:\d{2}$/.test(scheduleForm.time)) return scheduleTimeOptions
+
+    return [{ value: scheduleForm.time, label: scheduleForm.time }, ...scheduleTimeOptions]
+  }, [scheduleForm.time])
 
   const isProjectFormDirty = useMemo(() => {
     if (activeTab !== 'project-create') return false
@@ -1436,6 +1474,27 @@ export default function Home() {
   const handleProjectChange = (field: keyof ProjectFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setProjectForm((current) => ({ ...current, [field]: event.target.value }))
   const handleScheduleChange = (field: keyof ScheduleFormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setScheduleForm((current) => ({ ...current, [field]: event.target.value }))
+  const selectScheduleTime = (time: string) => {
+    setScheduleForm((current) => ({ ...current, time }))
+    setIsScheduleTimePickerOpen(false)
+  }
+  const handleScheduleTimeInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextTime = event.target.value
+    setScheduleForm((current) => ({ ...current, time: nextTime }))
+    setIsScheduleTimePickerOpen(true)
+  }
+  const handleScheduleTimeInputBlur = () => {
+    window.setTimeout(() => setIsScheduleTimePickerOpen(false), 120)
+    setScheduleForm((current) => {
+      const normalizedTime = normalizeScheduleTimeInput(current.time)
+      return normalizedTime ? { ...current, time: normalizedTime } : current
+    })
+  }
+  const handleScheduleTimeInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (scheduleForm.time === allDayTimeValue && /^\d$/.test(event.key)) {
+      setScheduleForm((current) => ({ ...current, time: '' }))
+    }
+  }
   const handleProjectViewFilterChange = (field: keyof ProjectViewFilters) => (event: ChangeEvent<HTMLSelectElement>) =>
     setProjectViewFilters((current) => ({ ...current, [field]: event.target.value as ProjectViewFilters[typeof field] }))
   const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -1456,6 +1515,7 @@ export default function Home() {
       setScheduleForm(defaultScheduleForm('', todayKey))
       setIsProjectPeriodMenuOpen(false)
       setIsCustomRepeatMenuOpen(false)
+      setIsScheduleTimePickerOpen(false)
     })
   }
   const handleCustomRepeatChange = (field: keyof CustomRepeatConfig) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -1511,6 +1571,7 @@ export default function Home() {
     setEditingScheduleId(null)
     setScheduleForm(defaultScheduleForm(projectId ?? '', todayKey))
     setIsCustomRepeatMenuOpen(false)
+    setIsScheduleTimePickerOpen(false)
   }
 
   const saveProject = async () => {
@@ -1551,6 +1612,13 @@ export default function Home() {
       }
       return
     }
+    const normalizedScheduleTime = normalizeScheduleTimeInput(scheduleForm.time)
+    if (!normalizedScheduleTime) {
+      if (typeof window !== 'undefined') {
+        window.alert('시간을 선택하거나 09:30 형식으로 입력해 주세요.')
+      }
+      return
+    }
 
     const resolvedRepeatCustom = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustom ? buildCustomRepeatRule(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustom
     const resolvedRepeatCustomLabel = scheduleForm.repeatType === 'custom' && !scheduleForm.repeatCustomLabel ? buildCustomRepeatLabel(customRepeatConfig, scheduleForm.date) : scheduleForm.repeatCustomLabel
@@ -1560,7 +1628,7 @@ export default function Home() {
       projectId: scheduleForm.projectId,
       title: scheduleForm.title || '새 일정',
       date: scheduleForm.date,
-      time: scheduleForm.time,
+      time: normalizedScheduleTime,
       repeatType: scheduleForm.repeatType,
       repeatCustom: resolvedRepeatCustom,
       repeatCustomLabel: resolvedRepeatCustomLabel,
@@ -1609,6 +1677,7 @@ export default function Home() {
     if (!target) return
     confirmDiscardDraft(() => {
       setEditingScheduleId(scheduleId)
+      setIsScheduleTimePickerOpen(false)
       setScheduleForm({
         projectId: target.projectId,
         title: target.title,
@@ -1635,6 +1704,7 @@ export default function Home() {
 
     confirmDiscardDraft(() => {
       setEditingScheduleId(null)
+      setIsScheduleTimePickerOpen(false)
       setScheduleForm({
         projectId: matchedProject?.id ?? '',
         title: event.summary || '가져온 일정',
@@ -2078,7 +2148,40 @@ export default function Home() {
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">날짜</Text><input type="date" value={scheduleForm.date} onChange={handleScheduleChange('date')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800" /></label>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">시간</Text><select value={scheduleForm.time} onChange={handleScheduleChange('time')} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">{scheduleTimeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label className="block space-y-3">
+                <Text variant="detail20" color="text-fg-tertiary">시간</Text>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={scheduleForm.time === allDayTimeValue ? '종일' : scheduleForm.time}
+                    onChange={handleScheduleTimeInputChange}
+                    onBlur={handleScheduleTimeInputBlur}
+                    onFocus={() => setIsScheduleTimePickerOpen(true)}
+                    onClick={() => setIsScheduleTimePickerOpen(true)}
+                    onKeyDown={handleScheduleTimeInputKeyDown}
+                    className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800"
+                    placeholder="09:00"
+                  />
+                  {isScheduleTimePickerOpen && (
+                    <div className="absolute left-0 top-[58px] z-20 max-h-[240px] w-full overflow-y-auto rounded-[24px] border border-[var(--color-border)] bg-white p-2 shadow-l">
+                      {visibleScheduleTimeOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectScheduleTime(option.value)}
+                          className={`block w-full rounded-[18px] px-4 py-2 text-left text-body1 transition hover:bg-surface-primary ${
+                            scheduleForm.time === option.value ? 'bg-blue-50 text-blue-900' : 'text-fg-primary'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  </div>
+              </label>
               <label className="block space-y-3"><Text variant="detail20" color="text-fg-tertiary">반복 여부</Text><select value={scheduleForm.repeatType} onChange={(event) => {
                 const nextValue = event.target.value as ScheduleRepeatType
                 if (nextValue === 'custom') {
