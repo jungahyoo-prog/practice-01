@@ -1509,6 +1509,9 @@ export default function Home() {
         setScheduleFilters(filters)
         return
       }
+      if (tab === 'project-view') {
+        resetProjectViewFilters()
+      }
       setScheduleQuickFilter('all')
     })
   }

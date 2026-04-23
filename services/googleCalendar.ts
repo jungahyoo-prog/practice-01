@@ -54,6 +54,8 @@ const GOOGLE_CALENDAR_SCOPE = [
 export const googleCalendarScope = GOOGLE_CALENDAR_SCOPE
 
 const ALL_DAY_TIME_VALUE = 'all-day'
+const DEFAULT_IMPORT_TIME_MIN = '2000-01-01T00:00:00.000Z'
+const DEFAULT_IMPORT_TIME_MAX = '2100-01-01T00:00:00.000Z'
 
 function isAllDayTimeValue(value: string) {
   const normalizedValue = value.trim().toLowerCase()
@@ -118,23 +120,34 @@ export async function fetchGoogleUserProfile(accessToken: string) {
 }
 
 export async function fetchGoogleCalendarEvents(accessToken: string, calendarId: string, query: GoogleCalendarEventsQuery = {}) {
-  const currentYearStart = new Date(new Date().getFullYear(), 0, 1).toISOString()
-  const params = new URLSearchParams({
-    singleEvents: 'true',
-    orderBy: 'startTime',
-    maxResults: String(query.maxResults ?? 2500),
-    timeMin: query.timeMin ?? currentYearStart,
-  })
-  if (query.timeMax) params.set('timeMax', query.timeMax)
+  const items: GoogleCalendarEventItem[] = []
+  let nextPageToken = ''
 
-  const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  do {
+    const params = new URLSearchParams({
+      singleEvents: 'true',
+      orderBy: 'startTime',
+      maxResults: String(query.maxResults ?? 2500),
+      timeMin: query.timeMin ?? DEFAULT_IMPORT_TIME_MIN,
+      timeMax: query.timeMax ?? DEFAULT_IMPORT_TIME_MAX,
+    })
 
-  if (!response.ok) throw new Error('calendar-events-failed')
+    if (nextPageToken) {
+      params.set('pageToken', nextPageToken)
+    }
 
-  const data = (await response.json()) as { items?: GoogleCalendarEventItem[] }
-  return (data.items ?? []).filter((item) => item.status !== 'cancelled')
+    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+
+    if (!response.ok) throw new Error('calendar-events-failed')
+
+    const data = (await response.json()) as { items?: GoogleCalendarEventItem[]; nextPageToken?: string }
+    items.push(...((data.items ?? []).filter((item) => item.status !== 'cancelled')))
+    nextPageToken = data.nextPageToken ?? ''
+  } while (nextPageToken)
+
+  return items
 }
 
 export async function createGoogleCalendarEvent(accessToken: string, calendarId: string, payload: CalendarEventPayload) {
