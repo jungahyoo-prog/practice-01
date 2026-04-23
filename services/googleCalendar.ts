@@ -55,6 +55,11 @@ export const googleCalendarScope = GOOGLE_CALENDAR_SCOPE
 
 const ALL_DAY_TIME_VALUE = 'all-day'
 
+function isAllDayTimeValue(value: string) {
+  const normalizedValue = value.trim().toLowerCase()
+  return normalizedValue === ALL_DAY_TIME_VALUE || normalizedValue === 'all-d' || value.trim() === '종일'
+}
+
 function buildGoogleCalendarDescription(projectName?: string, memo?: string) {
   return [projectName ? `프로젝트: ${projectName}` : '', memo ?? ''].filter(Boolean).join('\n')
 }
@@ -134,7 +139,7 @@ export async function fetchGoogleCalendarEvents(accessToken: string, calendarId:
 
 export async function createGoogleCalendarEvent(accessToken: string, calendarId: string, payload: CalendarEventPayload) {
   const recurrence = buildRecurringRule(payload.date, payload.repeatType, payload.repeatCustom)
-  const isAllDay = payload.time === ALL_DAY_TIME_VALUE
+  const isAllDay = isAllDayTimeValue(payload.time)
   const start = isAllDay
     ? { date: payload.date }
     : {

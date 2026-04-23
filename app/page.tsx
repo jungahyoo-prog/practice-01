@@ -144,6 +144,7 @@ const tabs: { key: DashboardTab; label: string }[] = [
 const tabContentInsetClassName = 'space-y-5'
 const tabContentLeadSpacerClassName = 'h-0'
 const allDayTimeValue = 'all-day'
+const legacyAllDayTimeValues = new Set(['all-d', allDayTimeValue, '종일'])
 
 const timelineMonths = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월']
 const scheduleTimeOptions = [
@@ -231,18 +232,26 @@ function formatLocalDateKey(date: Date) {
 }
 
 function buildDateTimeValue(date: string, time: string) {
-  return `${date}T${time === allDayTimeValue ? '00:00' : time}`
+  return `${date}T${isAllDayTimeValue(time) ? '00:00' : time}`
 }
 
 function formatDateLabel(date: string, time: string) {
   const parsedDate = new Date(`${date}T00:00:00`)
-  return `${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일 ${time === allDayTimeValue ? '종일' : time}`
+  return `${parsedDate.getMonth() + 1}월 ${parsedDate.getDate()}일 ${isAllDayTimeValue(time) ? '종일' : time}`
+}
+
+function isAllDayTimeValue(value: string) {
+  return legacyAllDayTimeValues.has(value.trim().toLowerCase())
+}
+
+function normalizeScheduleTimeValue(value: string) {
+  return isAllDayTimeValue(value) ? allDayTimeValue : value
 }
 
 function normalizeScheduleTimeInput(value: string) {
   const trimmedValue = value.trim()
   if (!trimmedValue) return ''
-  if (trimmedValue === '종일' || trimmedValue.toLowerCase() === allDayTimeValue) return allDayTimeValue
+  if (isAllDayTimeValue(trimmedValue)) return allDayTimeValue
 
   const colonMatch = trimmedValue.match(/^(\d{1,2}):(\d{1,2})$/)
   if (colonMatch) {
@@ -284,8 +293,8 @@ function formatProjectDuration(startDate: string, endDate: string) {
   return `${start.getFullYear()}.${String(start.getMonth() + 1).padStart(2, '0')}.${String(start.getDate()).padStart(2, '0')} - ${end.getFullYear()}.${String(end.getMonth() + 1).padStart(2, '0')}.${String(end.getDate()).padStart(2, '0')}`
 }
 
-function getLastDayOfMonth(month: number) {
-  return new Date(2026, month, 0).getDate()
+function getLastDayOfMonth(month: number, year = 2026) {
+  return new Date(year, month, 0).getDate()
 }
 
 function getMonthDateRange(monthIndex: number) {
@@ -387,13 +396,13 @@ function formatRepeatLabel(schedule: Pick<ScheduleItem, 'date' | 'repeatType' | 
 }
 
 function toGoogleCalendarDateTime(date: string, time: string) {
-  if (time === allDayTimeValue) return date.replaceAll('-', '')
+  if (isAllDayTimeValue(time)) return date.replaceAll('-', '')
   return `${date.replaceAll('-', '')}T${time.replace(':', '')}00`
 }
 
 function _buildGoogleCalendarEventUrl(schedule: ScheduleItem, projectName?: string, calendarId?: string) {
   const start = toGoogleCalendarDateTime(schedule.date, schedule.time)
-  const end = schedule.time === allDayTimeValue
+  const end = isAllDayTimeValue(schedule.time)
     ? (() => {
         const endDate = new Date(`${schedule.date}T00:00:00`)
         endDate.setDate(endDate.getDate() + 1)
@@ -440,15 +449,25 @@ function parseGoogleEventDate(dateValue?: string, dateTimeValue?: string) {
   }
 }
 
+function getGoogleEventSortKey(event: { summary?: string; start?: { date?: string; dateTime?: string } }) {
+  const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
+  return `${date}T${isAllDayTimeValue(time) ? '00:00' : time}|${event.summary ?? ''}`
+}
+
+function getGoogleEventStableKey(event: { id?: string; summary?: string; start?: { date?: string; dateTime?: string } }, index: number) {
+  return event.id ?? `${getGoogleEventSortKey(event)}|${index}`
+}
+
 function hasMatchingGoogleCalendarEvent(
   events: Array<{ summary?: string; start?: { date?: string; dateTime?: string } }>,
   schedule: Pick<ScheduleItem, 'title' | 'date' | 'time'>,
 ) {
   const normalizedScheduleTitle = schedule.title.trim().replace(/\s+/g, ' ').toLowerCase()
+  const normalizedScheduleTime = normalizeScheduleTimeValue(schedule.time)
   return events.some((event) => {
     const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
     const normalizedEventTitle = (event.summary ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
-    return normalizedEventTitle === normalizedScheduleTitle && date === schedule.date && time === schedule.time
+    return normalizedEventTitle === normalizedScheduleTitle && date === schedule.date && normalizeScheduleTimeValue(time) === normalizedScheduleTime
   })
 }
 
@@ -696,8 +715,11 @@ export default function Home() {
   const [scheduleProjectShortcutId, setScheduleProjectShortcutId] = useState<string | null>(null)
   const [highlightedScheduleId, setHighlightedScheduleId] = useState<string | null>(null)
   const [activeCalendarPanelTab, setActiveCalendarPanelTab] = useState<CalendarPanelTab>('preview')
+  const [calendarImportStartDate, setCalendarImportStartDate] = useState(todayKey)
   const [calendarActionScheduleId, setCalendarActionScheduleId] = useState<string | null>(null)
   const localRestoreInputRef = useRef<HTMLInputElement | null>(null)
+  const calendarImportListRef = useRef<HTMLDivElement | null>(null)
+  const calendarImportItemRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const { authorize, calendars, disconnect, events, googleClientId, googleEmail, connectWithAccessToken, authError, isAuthorizing, isCalendarsLoading, isConnected, isEventsLoading, isSavingEvent, selectedCalendar, selectedCalendarId, setSelectedCalendarId, addEventToCalendar, fetchEventsForRange, refreshEvents } = useGoogleCalendar(isGoogleScriptReady)
   const prefersRedirectCalendarLogin = useMemo(() => {
     if (!isSupabaseConfigured || typeof navigator === 'undefined') {
@@ -899,12 +921,44 @@ export default function Home() {
 
     return new Set(schedules.filter((schedule) => hasMatchingGoogleCalendarEvent(events, schedule)).map((schedule) => schedule.id))
   }, [events, isConnected, schedules, selectedCalendarId])
+  const orderedGoogleCalendarEvents = useMemo(() => [...events].sort((left, right) => getGoogleEventSortKey(left).localeCompare(getGoogleEventSortKey(right))), [events])
+  const calendarImportStartDateParts = useMemo(() => {
+    const parsedDate = new Date(`${calendarImportStartDate}T00:00:00`)
+    return {
+      year: parsedDate.getFullYear(),
+      month: parsedDate.getMonth() + 1,
+      day: parsedDate.getDate(),
+    }
+  }, [calendarImportStartDate])
+  const calendarImportDayOptions = useMemo(
+    () => Array.from({ length: getLastDayOfMonth(calendarImportStartDateParts.month, calendarImportStartDateParts.year) }, (_, index) => index + 1),
+    [calendarImportStartDateParts.month, calendarImportStartDateParts.year],
+  )
+  const calendarImportStartEventKey = useMemo(() => {
+    if (!orderedGoogleCalendarEvents.length) return ''
+
+    const targetIndex = orderedGoogleCalendarEvents.findIndex((event) => parseGoogleEventDate(event.start?.date, event.start?.dateTime).date >= calendarImportStartDate)
+    const resolvedIndex = targetIndex >= 0 ? targetIndex : orderedGoogleCalendarEvents.length - 1
+    return getGoogleEventStableKey(orderedGoogleCalendarEvents[resolvedIndex], resolvedIndex)
+  }, [calendarImportStartDate, orderedGoogleCalendarEvents])
   const visibleScheduleTimeOptions = useMemo(() => {
     if (scheduleTimeOptions.some((option) => option.value === scheduleForm.time)) return scheduleTimeOptions
     if (!/^\d{2}:\d{2}$/.test(scheduleForm.time)) return scheduleTimeOptions
 
     return [{ value: scheduleForm.time, label: scheduleForm.time }, ...scheduleTimeOptions]
   }, [scheduleForm.time])
+
+  useEffect(() => {
+    if (activeTab !== 'calendar' || activeCalendarPanelTab !== 'import' || !calendarImportStartEventKey) return
+
+    window.setTimeout(() => {
+      const listElement = calendarImportListRef.current
+      const targetElement = calendarImportItemRefs.current[calendarImportStartEventKey]
+      if (!listElement || !targetElement) return
+
+      listElement.scrollTo({ top: Math.max(targetElement.offsetTop - listElement.offsetTop, 0), behavior: 'smooth' })
+    }, 0)
+  }, [activeCalendarPanelTab, activeTab, calendarImportStartEventKey])
 
   const isProjectFormDirty = useMemo(() => {
     if (activeTab !== 'project-create') return false
@@ -983,6 +1037,22 @@ export default function Home() {
     }
 
     onConfirm()
+  }
+
+  const switchDashboardTab = (nextTab: DashboardTab) => {
+    if (activeTab === nextTab) return
+
+    confirmDiscardDraft(() => {
+      if (nextTab === 'schedule-list') {
+        resetScheduleListFilters()
+      }
+
+      if (nextTab === 'project-view') {
+        resetProjectViewFilters()
+      }
+
+      setActiveTab(nextTab)
+    })
   }
 
   const filteredSchedules = useMemo(
@@ -1491,15 +1561,32 @@ export default function Home() {
     })
   }
   const handleScheduleTimeInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (scheduleForm.time === allDayTimeValue && /^\d$/.test(event.key)) {
+    if (isAllDayTimeValue(scheduleForm.time) && /^\d$/.test(event.key)) {
       setScheduleForm((current) => ({ ...current, time: '' }))
     }
+  }
+  const resetProjectViewFilters = () => {
+    setProjectViewFilters({ startDateSort: '', endDateSort: '', priorityMode: '', durationSort: '', status: '' })
+  }
+  const resetScheduleListFilters = () => {
+    setScheduleQuickFilter('all')
+    setScheduleProjectShortcutId(null)
+    setScheduleFilters({ projectId: '', startDate: '', endDate: '', priority: '', kind: '' })
   }
   const handleProjectViewFilterChange = (field: keyof ProjectViewFilters) => (event: ChangeEvent<HTMLSelectElement>) =>
     setProjectViewFilters((current) => ({ ...current, [field]: event.target.value as ProjectViewFilters[typeof field] }))
   const handleScheduleFilterChange = (field: keyof ScheduleFilters) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setScheduleProjectShortcutId(null)
     setScheduleFilters((current) => ({ ...current, [field]: event.target.value as ScheduleFilters[typeof field] }))
+  }
+  const handleCalendarImportMonthChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextMonth = Number(event.target.value)
+    const nextDay = Math.min(calendarImportStartDateParts.day, getLastDayOfMonth(nextMonth, calendarImportStartDateParts.year))
+    setCalendarImportStartDate(`${calendarImportStartDateParts.year}-${String(nextMonth).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`)
+  }
+  const handleCalendarImportDayChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextDay = Number(event.target.value)
+    setCalendarImportStartDate(`${calendarImportStartDateParts.year}-${String(calendarImportStartDateParts.month).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`)
   }
 
   const goToDashboardHome = () => {
@@ -2154,7 +2241,7 @@ export default function Home() {
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={scheduleForm.time === allDayTimeValue ? '종일' : scheduleForm.time}
+                    value={isAllDayTimeValue(scheduleForm.time) ? '종일' : scheduleForm.time}
                     onChange={handleScheduleTimeInputChange}
                     onBlur={handleScheduleTimeInputBlur}
                     onFocus={() => setIsScheduleTimePickerOpen(true)}
@@ -2397,24 +2484,44 @@ export default function Home() {
             <div className="px-6 py-6">
               {isEventsLoading ? (
                 <Text variant="detail20" color="text-fg-secondary">선택한 캘린더의 일정을 불러오는 중입니다.</Text>
-              ) : events.length > 0 ? (
-                <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
-                  {events.map((event) => {
+              ) : orderedGoogleCalendarEvents.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block space-y-2">
+                      <Text variant="detail20" color="text-fg-tertiary">조회 시작월</Text>
+                      <select value={calendarImportStartDateParts.month} onChange={handleCalendarImportMonthChange} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                        {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{month}월</option>)}
+                      </select>
+                    </label>
+                    <label className="block space-y-2">
+                      <Text variant="detail20" color="text-fg-tertiary">조회 시작일</Text>
+                      <select value={calendarImportStartDateParts.day} onChange={handleCalendarImportDayChange} className="w-full rounded-[24px] border border-[var(--color-border)] bg-surface px-4 py-3 text-body1 text-fg-primary outline-none transition focus:border-blue-800">
+                        {calendarImportDayOptions.map((day) => <option key={day} value={day}>{day}일</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <Text variant="detail20" color="text-fg-secondary">선택한 날짜 위치로 이동합니다. 목록을 위아래로 스크롤하면 앞뒤 일정도 계속 볼 수 있습니다.</Text>
+                  <div ref={calendarImportListRef} className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
+                  {orderedGoogleCalendarEvents.map((event, index) => {
                     const { date, time } = parseGoogleEventDate(event.start?.date, event.start?.dateTime)
+                    const eventKey = getGoogleEventStableKey(event, index)
                     return (
-                      <Card key={event.id} padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
-                        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                          <div className="space-y-2">
-                            <Text variant="projectTitle" as="h3" color="text-fg-primary">{event.summary || '제목 없는 일정'}</Text>
-                            <Text variant="detail20" color="text-fg-secondary">{formatDateLabel(date, time)}</Text>
+                      <div key={eventKey} ref={(element) => { calendarImportItemRefs.current[eventKey] = element }}>
+                        <Card padding="md" className="border-[var(--color-border)] bg-surface-primary shadow-s">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div className="space-y-2">
+                              <Text variant="projectTitle" as="h3" color="text-fg-primary">{event.summary || '제목 없는 일정'}</Text>
+                              <Text variant="detail20" color="text-fg-secondary">{formatDateLabel(date, time)}</Text>
+                            </div>
+                            <Button variant="outlineDark" size="sm" shape="round" className="whitespace-nowrap" onClick={() => importGoogleCalendarEvent(event)}>
+                              내 일정 등록
+                            </Button>
                           </div>
-                          <Button variant="outlineDark" size="sm" shape="round" className="whitespace-nowrap" onClick={() => importGoogleCalendarEvent(event)}>
-                            내 일정 등록
-                          </Button>
-                        </div>
-                      </Card>
+                        </Card>
+                      </div>
                     )
                   })}
+                  </div>
                 </div>
               ) : (
                 <Text variant="detail20" color="text-fg-secondary">가져올 수 있는 일정이 아직 없습니다.</Text>
@@ -2516,7 +2623,7 @@ export default function Home() {
               </div>
             </Card>
           )}
-          <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => activeTab === tab.key ? undefined : confirmDiscardDraft(() => setActiveTab(tab.key))}>{tab.label}</Button>)}</div></Card>
+          <Card padding="md" className="border-transparent bg-white shadow-m"><div className="flex flex-wrap gap-3">{tabs.map((tab) => <Button key={tab.key} variant={activeTab === tab.key ? 'primary' : 'outlineDark'} size="sm" shape="round" className={activeTab === tab.key ? '' : 'border-black/20 text-black hover:border-black/30 hover:bg-black/[0.03] active:bg-black/[0.05]'} onClick={() => switchDashboardTab(tab.key)}>{tab.label}</Button>)}</div></Card>
           {renderTabContent()}
         </section>
       </div>
